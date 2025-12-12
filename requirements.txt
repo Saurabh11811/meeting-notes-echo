@@ -1,1 +1,21 @@
-# installing required libraries in my_envtransformerstorchgradiolangchainibm_watson_machine_learninghuggingface-hubffmpegibm-watsonx-ailangchainlangchain-ibmlangchain_communitytorchvision torchaudiomsalplaywrightpython-dotenvsoundfilelibrosapyyamlrichipywidgetsfaster_whisper# brew install ffmpeg -mac or sudo apt install ffmpeg -y on linux, windows need to check later# playwright install chromium
+faster-whisper==1.2.1
+ffmpeg==1.4
+gradio==6.1.0
+huggingface-hub==0.36.0
+ibm_watson_machine_learning==1.0.368
+ibm_watsonx_ai==1.4.11
+ipywidgets==8.1.8
+langchain==1.1.3
+langchain-community==0.4.1
+langchain-ibm==1.0.1
+librosa==0.11.0
+msal==1.34.0
+playwright==1.57.0
+python-dotenv==1.2.1
+PyYAML==6.0.3
+rich==14.2.0
+soundfile==0.13.1
+torch==2.9.1
+torchaudio==2.9.1
+torchvision==0.24.1
+transformers==4.57.3
