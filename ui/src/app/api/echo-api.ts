@@ -201,6 +201,10 @@ export function getSettings() {
   return request<EchoSettings>("/settings");
 }
 
+export function getHealth() {
+  return request<any>("/health");
+}
+
 export function updateSettings(values: EchoSettings) {
   return send<EchoSettings>("/settings", "PUT", { values });
 }

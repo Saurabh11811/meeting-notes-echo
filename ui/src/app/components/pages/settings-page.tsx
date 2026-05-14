@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { PageHeader } from "../page-header";
-import { Server, Mic, Database, Activity, KeyRound, CheckCircle2, Save, RotateCcw } from "lucide-react";
-import { getSettings, updateSettings, type EchoSettings } from "../../api/echo-api";
+import { Server, Mic, Database, Activity, KeyRound, CheckCircle2, Save, RotateCcw, Info } from "lucide-react";
+import { Tooltip, TooltipTrigger, TooltipContent } from "../ui/tooltip";
+import { getSettings, updateSettings, getHealth, type EchoSettings } from "../../api/echo-api";
 
 const sections = [
   { id: "health", label: "System Health", icon: Activity },
@@ -142,26 +143,143 @@ function Select({ value, options, onChange }: { value: string; options: string[]
 }
 
 function HealthPanel({ settings }: { settings: EchoSettings | null }) {
+  const [health, setHealth] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [lastChecked, setLastChecked] = useState<Date | null>(null);
+
+  const refresh = async () => {
+    setLoading(true);
+    try {
+      const data = await getHealth();
+      setHealth(data);
+      setLastChecked(new Date());
+    } catch (error) {
+      console.error("Health check failed:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
   const checks = [
-    { l: "ffmpeg", v: "v6.1 · healthy", ok: true },
-    { l: "Playwright", v: "v1.45 · healthy", ok: true },
-    { l: "Python runtime", v: "3.11.7 · healthy", ok: true },
-    { l: "Ollama model", v: `${settings?.backends?.local?.model || "llama3:latest"} · configured`, ok: true },
-    { l: "Output folder writable", v: `${settings?.storage?.output_dir || "outputs"} · configured`, ok: true },
-    { l: "Primary backend", v: `${settings?.summary?.default_backend || "local"} · configured`, ok: true },
+    { 
+      l: "ffmpeg", 
+      v: health?.dependencies?.ffmpeg?.installed ? `v${health.dependencies.ffmpeg.path.split('/').pop() || '6.x'} · healthy` : "Not found", 
+      reason: "Audio transcoding", 
+      help: (
+        <div className="space-y-1">
+          <div className="font-medium mb-1">Required to process video and audio files.</div>
+          <div className="text-echo-text-faint">• <span className="text-white">Mac:</span> brew install ffmpeg</div>
+          <div className="text-echo-text-faint">• <span className="text-white">Windows:</span> choco install ffmpeg</div>
+          <div className="text-echo-text-faint">• <span className="text-white">Linux:</span> apt install ffmpeg</div>
+        </div>
+      ),
+      ok: health?.dependencies?.ffmpeg?.installed 
+    },
+    { 
+      l: "Playwright", 
+      v: health?.dependencies?.playwright?.installed ? `Python library · healthy` : "Not installed", 
+      reason: "Transcript capture", 
+      help: (
+        <div className="space-y-1">
+          <div className="font-medium mb-1">Required for capturing transcripts from meeting links.</div>
+          <div className="text-echo-text-faint">• <span className="text-white">Run:</span> npx playwright install</div>
+          <div className="text-echo-text-faint">• <span className="text-white">Verify:</span> pip install playwright</div>
+        </div>
+      ),
+      ok: health?.dependencies?.playwright?.installed 
+    },
+    { 
+      l: "Python runtime", 
+      v: health?.python?.version ? `v${health.python.version} · healthy` : "v3.10+ required", 
+      reason: "Core engine", 
+      help: (
+        <div className="space-y-1">
+          <div className="font-medium mb-1">The backbone of the ECHO backend.</div>
+          <div className="text-echo-text-faint">• <span className="text-white">Min version:</span> Python 3.10+</div>
+          <div className="text-echo-text-faint">• <span className="text-white">Current:</span> {health?.python?.version || "Not detected"}</div>
+        </div>
+      ),
+      ok: health?.python?.ok 
+    },
+    { 
+      l: "Ollama model", 
+      v: health?.dependencies?.ollama?.model_present ? `${health.dependencies.ollama.model_name} · ready` : health?.dependencies?.ollama?.installed ? `${health.dependencies.ollama.model_name} · model not found` : "Ollama not found", 
+      reason: "Local AI backend", 
+      help: (
+        <div className="space-y-1">
+          <div className="font-medium mb-1">Required for local summarization.</div>
+          <div className="text-echo-text-faint">• <span className="text-white">Install:</span> ollama.com</div>
+          <div className="text-echo-text-faint">• <span className="text-white">Run:</span> ollama pull {health?.dependencies?.ollama?.model_name || "llama3"}</div>
+        </div>
+      ),
+      ok: health?.dependencies?.ollama?.model_present 
+    },
+    { 
+      l: "Output folder", 
+      v: health?.dependencies?.storage?.writable ? `${health.dependencies.storage.path} · writable` : "Not writable", 
+      reason: "File storage", 
+      help: (
+        <div className="space-y-1">
+          <div className="font-medium mb-1">Location where MoM and transcripts are saved.</div>
+          <div className="text-echo-text-faint">• Ensure the folder exists and is writable.</div>
+          <div className="text-echo-text-faint">• Default is "out" folder in backend.</div>
+        </div>
+      ),
+      ok: health?.dependencies?.storage?.writable 
+    },
   ];
+
   return (
-    <Panel title="System Health" desc="Read-only environment diagnostics for admins.">
-      <div className="flex items-center justify-between">
-        <div className="text-[12px] text-echo-text-muted">Last checked 2 minutes ago</div>
-        <button className="h-9 px-3 rounded-md bg-echo-text text-echo-surface text-[12px]">Test all connections</button>
+    <Panel title="System Health">
+      <div className="mb-4 grid grid-cols-2 gap-4">
+        <div className="p-3 rounded-md bg-echo-surface-2 border border-echo-border">
+          <div className="text-[10px] text-echo-text-faint uppercase tracking-wider mb-1">Operating System</div>
+          <div className="text-[12.5px] text-echo-text font-medium">{health?.os || "Detecting..."}</div>
+        </div>
+        <div className="p-3 rounded-md bg-echo-surface-2 border border-echo-border">
+          <div className="text-[10px] text-echo-text-faint uppercase tracking-wider mb-1">Backend Version</div>
+          <div className="text-[12.5px] text-echo-text font-medium">v{health?.version || "0.0.0"} · healthy</div>
+        </div>
       </div>
-      <ul className="divide-y divide-echo-border border border-echo-border rounded-md">
+
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-[12px] text-echo-text-muted">
+          Status: {loading ? "Checking..." : health ? "Operational" : "Unknown"} 
+          {lastChecked && ` (last checked ${lastChecked.toLocaleTimeString()})`}
+        </div>
+        <button 
+          onClick={refresh}
+          disabled={loading}
+          className="h-8 px-3 rounded-md border border-echo-border bg-echo-surface hover:bg-echo-surface-hover text-[11px] text-echo-text disabled:opacity-50"
+        >
+          {loading ? "Checking..." : "Refresh diagnostics"}
+        </button>
+      </div>
+      <ul className="divide-y divide-echo-border border border-echo-border rounded-md overflow-hidden">
         {checks.map((c) => (
-          <li key={c.l} className="px-4 py-2.5 flex items-center gap-3">
-            <CheckCircle2 size={14} className={c.ok ? "text-echo-success" : "text-echo-danger"} />
-            <span className="text-[12px] text-echo-text flex-1">{c.l}</span>
-            <span className="text-[12px] text-echo-text-muted">{c.v}</span>
+          <li key={c.l} className="px-4 py-3 flex items-center gap-3 hover:bg-echo-surface-hover/50 transition-colors">
+            <CheckCircle2 size={15} className={c.ok ? "text-echo-success" : "text-echo-danger"} />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-[12.5px] text-echo-text" style={{ fontWeight: 500 }}>{c.l}</span>
+                <span className="text-[11px] text-echo-text-muted">({c.reason})</span>
+                <Tooltip>
+                   <TooltipTrigger asChild>
+                     <button className="p-0.5 rounded-full hover:bg-echo-surface-2 transition-colors">
+                       <Info size={13} className="text-echo-text-faint hover:text-echo-accent cursor-help" />
+                     </button>
+                   </TooltipTrigger>
+                   <TooltipContent side="right" className="max-w-[280px]">
+                     {c.help}
+                   </TooltipContent>
+                </Tooltip>
+              </div>
+              <div className="text-[11.5px] text-echo-text-muted mt-0.5">{c.v}</div>
+            </div>
           </li>
         ))}
       </ul>

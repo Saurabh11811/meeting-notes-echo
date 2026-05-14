@@ -10,11 +10,11 @@ from pathlib import Path
 from uuid import uuid4
 
 from echo_api.core.config import load_app_config
-from echo_api.core.paths import REPO_ROOT, storage_path
+from echo_api.core.paths import BACKEND_DIR, storage_path
 from echo_api.db.connection import db_session
 
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
 
 import chat_helper  # noqa: E402
 import calls_helper  # noqa: E402
