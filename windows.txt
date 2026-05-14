@@ -1,0 +1,34 @@
+cd C:\Projects\meeting-notes-echo
+python --version
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m playwright install chromium
+winget install --id Gyan.FFmpeg --exact --accept-package-agreements --accept-source-agreements
+
+
+
+------------------------
+
+cd C:\Projects\meeting-notes-echo
+where ffmpeg
+where ffprobe
+python -c "import shutil; print(shutil.which('ffmpeg')); print(shutil.which('ffprobe'))"
+python -c "import playwright.sync_api; print('playwright OK')"
+python echo.py
+
+
+
+
+--------------------
+
+cd C:\Projects\meeting-notes-echo
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\setup_windows_no_conda.ps1
+
+
+-----------------------
+
+If you want a normal Python virtual environment instead of global Python, still without conda:
+.\setup_windows_no_conda.ps1 -UseVenv
+
+That creates .venv, installs Python dependencies there, installs Playwright Chromium for that Python, and checks ffmpeg from the same process.
