@@ -5,7 +5,7 @@ import type { PageId } from "../App";
 const navItems: { id: PageId; label: string; icon: any }[] = [
   { id: "home", label: "Home", icon: Home },
   { id: "notes", label: "Meeting Notes", icon: NotebookText },
-  { id: "templates", label: "Templates", icon: LayoutTemplate },
+  { id: "templates", label: "Template Studio", icon: LayoutTemplate },
   { id: "settings", label: "Settings", icon: Settings },
 ];
 

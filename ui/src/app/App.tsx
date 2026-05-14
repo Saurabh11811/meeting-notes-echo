@@ -14,7 +14,7 @@ const breadcrumbs: Record<PageId, string> = {
   home: "Home",
   notes: "Meeting Notes",
   detail: "Meeting Notes / Detail",
-  templates: "Templates",
+  templates: "Template Studio",
   settings: "Settings",
 };
 
