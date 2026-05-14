@@ -233,6 +233,25 @@ def sniff_transcript_payloads(page, seconds=6) -> List[str]:
             seen.add(s); out.append(s)
     return out
 
+def wait_for_transcript_container(page, seconds: int, poll_ms: int = 1500):
+    """
+    Keep the interactive browser open while the user completes first-time login.
+    Returns the transcript container once it appears, or None after timeout.
+    """
+    if seconds <= 0:
+        return None
+
+    deadline = time.time() + seconds
+    while time.time() < deadline:
+        try:
+            container_el = find_transcript_container(page)
+            if container_el:
+                return container_el
+        except Exception:
+            pass
+        page.wait_for_timeout(poll_ms)
+    return None
+
 def capture_transcript(
     url: str,
     out_dir: str | Path = "./out_transcript",
@@ -243,6 +262,7 @@ def capture_transcript(
     stabilize_rounds: int = 3,
     profile_dir: str | None = None,
     close_browser_after_capture: bool = True,
+    login_wait_seconds: int = 300,
 ) -> Tuple[str, List[str], List[str]]:
     """
     Opens Teams/Stream viewer URL (no UI clicks), passively sniffs captions and
@@ -270,11 +290,16 @@ def capture_transcript(
 
         container_el = find_transcript_container(page)
         if not container_el:
-            stop_aggressive_pause(page)
-            if close_browser_after_capture:
-                ctx.close()
-            # Return empty to let caller decide UI message
-            return ("", sniff_lines, [])
+            container_el = wait_for_transcript_container(page, login_wait_seconds)
+            if container_el:
+                start_aggressive_pause(page, enforce_pause_ms)
+                sniff_lines.extend(sniff_transcript_payloads(page, sniff_seconds))
+            else:
+                stop_aggressive_pause(page)
+                if close_browser_after_capture:
+                    ctx.close()
+                # Return empty to let caller decide UI message
+                return ("", sniff_lines, [])
 
         dom_lines = robust_scroll_collect(container_el, page, max_scrolls, scroll_pause_ms, stabilize_rounds)
 

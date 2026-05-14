@@ -361,7 +361,8 @@ def process(fileobj, url_text,
             url=url_text, out_dir="./out_transcript",
             sniff_seconds=6, enforce_pause_ms=800, max_scrolls=320,
             scroll_pause_ms=900, stabilize_rounds=3,
-            profile_dir=os.getenv("PW_PROFILE_DIR"), close_browser_after_capture=True,
+            profile_dir=os.getenv("PW_PROFILE_DIR"), close_browser_after_capture=False,
+            login_wait_seconds=int(os.getenv("CAPTURE_LOGIN_WAIT_SECONDS", "300")),
         )
         return full_text
 
