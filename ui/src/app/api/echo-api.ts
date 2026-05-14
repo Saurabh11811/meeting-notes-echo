@@ -1,0 +1,238 @@
+const API_BASE = (import.meta.env.VITE_ECHO_API_BASE_URL || "http://127.0.0.1:8765/api").replace(/\/$/, "");
+
+export type HomeSummary = {
+  counts: {
+    meetings_processed: number;
+    pending_review: number;
+    queue_running: number;
+    action_items_open: number;
+  };
+  active_jobs: Array<{
+    id: string;
+    meeting_id: string | null;
+    source_type: string;
+    title: string;
+    template_name: string | null;
+    stage: string;
+    progress: number;
+    status: string;
+    error_code?: string;
+    error_message?: string;
+    created_at: string;
+    updated_at: string;
+    events: Array<{
+      stage: string;
+      progress: number;
+      message: string;
+      level: "info" | "warning" | "error";
+      created_at: string;
+    }>;
+  }>;
+  ready_for_review: Array<Record<string, unknown>>;
+  recent_meetings: Array<{
+    id: string;
+    title: string;
+    meeting_type: string;
+    status: string;
+    source_label: string;
+    created_at: string;
+    updated_at: string;
+    decisions_count: number;
+    action_items_count: number;
+    mom_version: number;
+  }>;
+  open_action_items: Array<{
+    id: string;
+    description: string;
+    owner: string;
+    due_date: string | null;
+    status: string;
+    project: string;
+    source_meeting: string;
+  }>;
+};
+
+export type EchoSettings = Record<string, any>;
+
+export type MeetingSummary = {
+  id: string;
+  title: string;
+  meeting_type: string;
+  project: string;
+  host: string;
+  source_type: string;
+  source_label: string;
+  status: string;
+  confidentiality: string;
+  created_at: string;
+  updated_at: string;
+  decisions_count: number;
+  action_items_count: number;
+  mom_version: number;
+};
+
+export type MomVersion = {
+  id: string;
+  version_number: number;
+  title: string;
+  summary: string;
+  content_markdown: string;
+  status: string;
+  backend_kind: string;
+  created_at: string;
+  approved_at: string | null;
+};
+
+export type MeetingDetail = {
+  meeting: MeetingSummary & {
+    tags_json?: string;
+  };
+  latest_mom: MomVersion | null;
+  mom_versions: MomVersion[];
+  transcript: {
+    id: string;
+    text: string;
+    source: string;
+    language: string;
+    created_at: string;
+  } | null;
+  decisions: Array<{
+    id: string;
+    description: string;
+    context: string;
+    owner: string;
+    source_ref: string;
+    created_at: string;
+  }>;
+  action_items: Array<{
+    id: string;
+    description: string;
+    owner: string;
+    due_date: string | null;
+    status: string;
+    project: string;
+    confidence: number;
+    source_ref: string;
+    created_at: string;
+  }>;
+  risks: Array<{
+    id: string;
+    description: string;
+    severity: string;
+    mitigation: string;
+    source_ref: string;
+    created_at: string;
+  }>;
+  jobs: Array<{
+    id: string;
+    stage: string;
+    progress: number;
+    status: string;
+    error_code: string;
+    error_message: string;
+    created_at: string;
+    updated_at: string;
+    events: Array<{
+      stage: string;
+      progress: number;
+      message: string;
+      level: "info" | "warning" | "error";
+      created_at: string;
+    }>;
+  }>;
+};
+
+export type JobCreateRequest = {
+  source_type: "url" | "upload" | "transcript";
+  sources: string[];
+  meeting_type: string;
+  template_name: string;
+  confidentiality: string;
+  project?: string;
+  host?: string;
+  run_now?: boolean;
+};
+
+async function request<T>(path: string): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) {
+    throw new Error(`ECHO API ${response.status}: ${response.statusText}`);
+  }
+  return response.json() as Promise<T>;
+}
+
+async function send<T>(path: string, method: "POST" | "PUT", body: unknown): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    let detail = `${response.status}: ${response.statusText}`;
+    try {
+      const data = await response.json();
+      detail = data.detail || detail;
+    } catch {
+      // Keep HTTP status fallback.
+    }
+    throw new Error(detail);
+  }
+  return response.json() as Promise<T>;
+}
+
+export function getHomeSummary() {
+  return request<HomeSummary>("/home");
+}
+
+export function getMeetings() {
+  return request<{ meetings: MeetingSummary[] }>("/meetings");
+}
+
+export function getMeetingDetail(meetingId: string) {
+  return request<MeetingDetail>(`/meetings/${encodeURIComponent(meetingId)}`);
+}
+
+export function getSettings() {
+  return request<EchoSettings>("/settings");
+}
+
+export function updateSettings(values: EchoSettings) {
+  return send<EchoSettings>("/settings", "PUT", { values });
+}
+
+export function createJobs(payload: JobCreateRequest) {
+  return send<{ jobs: Array<Record<string, unknown>> }>("/jobs", "POST", payload);
+}
+
+export async function createUploadJobs(payload: Omit<JobCreateRequest, "source_type" | "sources"> & { files: File[] }) {
+  const form = new FormData();
+  payload.files.forEach((file) => form.append("files", file));
+  form.append("meeting_type", payload.meeting_type);
+  form.append("template_name", payload.template_name);
+  form.append("confidentiality", payload.confidentiality);
+  form.append("project", payload.project || "");
+  form.append("host", payload.host || "");
+  form.append("run_now", String(payload.run_now ?? true));
+
+  const response = await fetch(`${API_BASE}/jobs/upload`, {
+    method: "POST",
+    headers: { Accept: "application/json" },
+    body: form,
+  });
+  if (!response.ok) {
+    let detail = `${response.status}: ${response.statusText}`;
+    try {
+      const data = await response.json();
+      detail = data.detail || detail;
+    } catch {
+      // Keep HTTP status fallback.
+    }
+    throw new Error(detail);
+  }
+  return response.json() as Promise<{ jobs: Array<Record<string, unknown>> }>;
+}

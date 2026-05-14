@@ -1,0 +1,166 @@
+app:
+  product_name: ECHO
+  product_subtitle: Executive Calls, Highlights & Outcomes
+  environment: development
+  timezone: Asia/Kolkata
+  api:
+    host: 127.0.0.1
+    port: 8765
+    cors_origins:
+      - http://localhost:5173
+      - http://127.0.0.1:5173
+
+user:
+  full_name: Priya Sharma
+  email: priya.sharma@company.com
+  role: Chief of Staff
+
+defaults:
+  meeting_type: Executive
+  export_format: PDF · Board ready
+  confidentiality: Internal
+
+notifications:
+  mom_ready: true
+  action_due: true
+  queue_attention: true
+  weekly_digest: false
+
+database:
+  filename: echo.db
+  pragmas:
+    journal_mode: WAL
+    foreign_keys: true
+    busy_timeout_ms: 5000
+
+storage:
+  output_dir: out
+  uploads_dir: uploads
+  exports_dir: exports
+  save_transcript: true
+  save_summary: true
+  save_email_draft: true
+  retention_days: 14
+
+processing:
+  max_concurrent_jobs: 1
+  login_wait_seconds: 300
+  transcript_capture:
+    sniff_seconds: 6
+    enforce_pause_ms: 800
+    max_scrolls: 320
+    scroll_pause_ms: 900
+    stabilize_rounds: 3
+
+summary:
+  default_backend: dify
+  timeout_seconds: 240
+  max_chars: 0
+  default_template: Executive MoM
+  prompt_file: ""
+  prompt_text: ""
+
+backends:
+  local:
+    enabled: true
+    name: Local Ollama
+    base_url: http://localhost:11434
+    model: llama3:latest
+  dify:
+    enabled: true
+    name: Dify
+    base_url: https://service-dify-devs.maersk-digital.net/v1
+    api_key: ""
+  azure:
+    enabled: false
+    name: Azure OpenAI
+    endpoint: ""
+    api_key: ""
+    api_version: 2024-02-15-preview
+    deployment: ""
+
+asr:
+  backend: faster-whisper
+  model_size: small
+  language: en
+  vad: false
+  force_hf: false
+  chunk_length_s: 30
+  stride_length_s: 5
+
+privacy:
+  local_only_mode: false
+  redact_pii: true
+  delete_transcript_after_mom: false
+  audit_logging: true
+
+privacy_preferences:
+  hide_from_workspace_search: false
+  mask_participant_emails: true
+  auto_redact_phone_numbers: true
+
+templates:
+  defaults:
+    - name: Executive MoM
+      meeting_type: Executive
+      description: Board-ready summary with decisions, risks, owners, and next steps.
+      is_default: true
+      is_locked: true
+      sections:
+        - Executive Summary
+        - Decisions
+        - Action Items
+        - Risks
+        - Full MoM
+        - Transcript
+    - name: Project Review
+      meeting_type: Project Review
+      description: Milestones, blockers, owners, dates, and delivery risks.
+      is_default: false
+      is_locked: false
+      sections:
+        - Summary
+        - Milestones
+        - Decisions
+        - Action Items
+        - Risks
+    - name: Client Call
+      meeting_type: Client Call
+      description: External-facing recap with commitments, decisions, and follow-ups.
+      is_default: false
+      is_locked: false
+      sections:
+        - Summary
+        - Client Commitments
+        - Decisions
+        - Action Items
+    - name: Townhall
+      meeting_type: Townhall
+      description: Key announcements, Q&A themes, and follow-ups.
+      is_default: false
+      is_locked: false
+      sections:
+        - Announcements
+        - Q&A Themes
+        - Follow-ups
+    - name: Demo/UAT
+      meeting_type: Demo/UAT
+      description: Acceptance criteria, defects, open questions, and sign-off readiness.
+      is_default: false
+      is_locked: false
+      sections:
+        - Demo Summary
+        - Acceptance Criteria
+        - Defects
+        - Action Items
+    - name: Incident Review
+      meeting_type: Incident
+      description: Timeline, root cause, customer impact, mitigations, and follow-up actions.
+      is_default: false
+      is_locked: true
+      sections:
+        - Timeline
+        - Root Cause
+        - Impact
+        - Mitigations
+        - Action Items

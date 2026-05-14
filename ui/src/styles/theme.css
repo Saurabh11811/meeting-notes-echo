@@ -1,0 +1,148 @@
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --font-size: 14px;
+
+  /* ECHO semantic tokens — light */
+  --echo-bg: #f7f8fa;
+  --echo-surface: #ffffff;
+  --echo-surface-2: #f1f4f8;
+  --echo-surface-hover: #f5f7fa;
+  --echo-border: #e4e7ec;
+  --echo-border-strong: #d0d5dd;
+  --echo-text: #0f172a;
+  --echo-text-muted: #5b6573;
+  --echo-text-faint: #98a2b3;
+  --echo-accent: #0f766e;
+  --echo-accent-hover: #115e59;
+  --echo-accent-bg: #ecfdf5;
+  --echo-accent-bg-2: #d1fae5;
+  --echo-accent-fg: #134e4a;
+  --echo-success: #059669;
+  --echo-warning: #d97706;
+  --echo-danger: #e11d48;
+  --echo-info: #2563eb;
+  --echo-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+
+  /* shadcn-mapped (kept for ui/* components) */
+  --background: var(--echo-bg);
+  --foreground: var(--echo-text);
+  --card: var(--echo-surface);
+  --card-foreground: var(--echo-text);
+  --popover: var(--echo-surface);
+  --popover-foreground: var(--echo-text);
+  --primary: var(--echo-accent);
+  --primary-foreground: #ffffff;
+  --secondary: var(--echo-surface-2);
+  --secondary-foreground: var(--echo-text);
+  --muted: var(--echo-surface-2);
+  --muted-foreground: var(--echo-text-muted);
+  --accent: var(--echo-surface-2);
+  --accent-foreground: var(--echo-text);
+  --destructive: var(--echo-danger);
+  --destructive-foreground: #ffffff;
+  --border: var(--echo-border);
+  --input: transparent;
+  --input-background: var(--echo-surface-2);
+  --switch-background: #cbced4;
+  --font-weight-medium: 500;
+  --font-weight-normal: 400;
+  --ring: var(--echo-accent);
+  --radius: 0.5rem;
+  --sidebar: var(--echo-surface);
+  --sidebar-foreground: var(--echo-text);
+  --sidebar-primary: var(--echo-accent);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: var(--echo-accent-bg);
+  --sidebar-accent-foreground: var(--echo-accent-fg);
+  --sidebar-border: var(--echo-border);
+  --sidebar-ring: var(--echo-accent);
+}
+
+.dark {
+  --echo-bg: #0a0f1a;
+  --echo-surface: #111827;
+  --echo-surface-2: #0f172a;
+  --echo-surface-hover: #1e293b;
+  --echo-border: #1f2937;
+  --echo-border-strong: #334155;
+  --echo-text: #e5e7eb;
+  --echo-text-muted: #94a3b8;
+  --echo-text-faint: #64748b;
+  --echo-accent: #2dd4bf;
+  --echo-accent-hover: #5eead4;
+  --echo-accent-bg: rgba(45, 212, 191, 0.12);
+  --echo-accent-bg-2: rgba(45, 212, 191, 0.22);
+  --echo-accent-fg: #99f6e4;
+  --echo-success: #34d399;
+  --echo-warning: #fbbf24;
+  --echo-danger: #fb7185;
+  --echo-info: #60a5fa;
+  --echo-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+
+  --primary-foreground: #042f2e;
+  --destructive-foreground: #fff1f2;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-input-background: var(--input-background);
+  --color-switch-background: var(--switch-background);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+
+  /* ECHO tokens exposed as Tailwind colors */
+  --color-echo-bg: var(--echo-bg);
+  --color-echo-surface: var(--echo-surface);
+  --color-echo-surface-2: var(--echo-surface-2);
+  --color-echo-surface-hover: var(--echo-surface-hover);
+  --color-echo-border: var(--echo-border);
+  --color-echo-border-strong: var(--echo-border-strong);
+  --color-echo-text: var(--echo-text);
+  --color-echo-text-muted: var(--echo-text-muted);
+  --color-echo-text-faint: var(--echo-text-faint);
+  --color-echo-accent: var(--echo-accent);
+  --color-echo-accent-hover: var(--echo-accent-hover);
+  --color-echo-accent-bg: var(--echo-accent-bg);
+  --color-echo-accent-bg-2: var(--echo-accent-bg-2);
+  --color-echo-accent-fg: var(--echo-accent-fg);
+  --color-echo-success: var(--echo-success);
+  --color-echo-warning: var(--echo-warning);
+  --color-echo-danger: var(--echo-danger);
+  --color-echo-info: var(--echo-info);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    background: var(--echo-bg);
+    color: var(--echo-text);
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  html {
+    font-size: var(--font-size);
+  }
+}

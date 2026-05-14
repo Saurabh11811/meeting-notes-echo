@@ -1,6 +1,9 @@
 *.mp3
 *.mp4
 config.yaml
+.DS_Store
+node_modules/
+logs/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -58,6 +58,49 @@ Recording (File OR Teams/Stream URL)
 
 ## 🚀 Quick Start
 
+### Product UI + New Backend
+
+The new product architecture runs a FastAPI backend and the generated React/Vite UI.
+
+```bash
+# Backend only
+./run_backend.sh
+
+# Frontend only
+./run_frontend.sh
+
+# Backend + frontend together
+./run_app.sh
+```
+
+Default URLs:
+
+- Backend: `http://127.0.0.1:8765`
+- API docs: `http://127.0.0.1:8765/docs`
+- Health check: `http://127.0.0.1:8765/api/health`
+- Frontend: `http://127.0.0.1:5173`
+
+The backend script uses your current Python environment and does not create a virtual environment. If dependencies are missing, install them yourself with `python -m pip install -r backend/requirements.txt`. Frontend dependencies are installed by `run_frontend.sh` if `ui/node_modules` is missing. Backend development data is stored under `backend/.data/`.
+
+### Product Backend Data
+
+The product backend uses local SQLite by default. The database is generated automatically on backend startup by `backend/echo_api/services/bootstrap.py`, using migrations in `backend/echo_api/db/schema.py` and reference-data setup in `backend/echo_api/db/seed.py`.
+
+- SQLite file: `backend/.data/echo.db`
+- User config: `backend/.data/config.yaml`
+- Generated transcripts/summaries/email drafts: `backend/.data/out/`
+- Uploaded media: `backend/.data/uploads/`
+
+To reset only the development database and recreate an empty schema:
+
+```bash
+./reset_dev_db.sh --yes
+```
+
+This keeps `backend/.data/config.yaml` and generated output files. To reset manually, stop the backend, delete `backend/.data/echo.db`, `backend/.data/echo.db-wal`, and `backend/.data/echo.db-shm`, then start `./run_backend.sh` again.
+
+### Legacy Gradio MVP
+
 ### 1) Requirements
 - **Python 3.12+** (3.10+ works; tested on macOS)
 - `ffmpeg` installed and on PATH
@@ -202,4 +245,3 @@ Click **Test All Connections** in the UI to verify:
 - The URL capture flow **never attempts to bypass DRM** or protected streams.
 - Local mode (Ollama) ensures content **stays on device**.
 - You control what to persist via `config.yaml` (transcripts, summaries, email drafts).
-
