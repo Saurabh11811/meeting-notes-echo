@@ -207,15 +207,63 @@ function BackendPanel({ settings, update }: { settings: EchoSettings | null; upd
 }
 
 function ASRPanel({ settings, update }: { settings: EchoSettings | null; update: SettingsUpdate }) {
+  const backend = settings?.asr?.backend || "faster-whisper";
+  const model = settings?.asr?.model_size || "small";
+  const vad = Boolean(settings?.asr?.vad);
+  const isHF = backend === "hf-whisper";
+
   return (
     <Panel title="ASR Configuration" desc="Speech-to-text settings for recordings without transcripts.">
-      <Row label="ASR backend"><Select value={settings?.asr?.backend || "faster-whisper"} options={["faster-whisper", "hf-whisper"]} onChange={(value) => update(["asr", "backend"], value)} /></Row>
-      <Row label="Whisper model"><Select value={settings?.asr?.model_size || "small"} options={["tiny", "base", "small", "medium", "large-v3"]} onChange={(value) => update(["asr", "model_size"], value)} /></Row>
-      <Row label="Language"><Input value={settings?.asr?.language || "en"} onChange={(value) => update(["asr", "language"], value)} /></Row>
-      <Row label="Voice activity detection (VAD)"><Toggle on={Boolean(settings?.asr?.vad)} label="Enabled" onChange={(value) => update(["asr", "vad"], value)} /></Row>
-      <Row label="Force HF"><Toggle on={Boolean(settings?.asr?.force_hf)} label="Disable faster-whisper" onChange={(value) => update(["asr", "force_hf"], value)} /></Row>
-      <Row label="Chunk length"><Input value={String(settings?.asr?.chunk_length_s || 30)} type="number" onChange={(value) => update(["asr", "chunk_length_s"], Number(value || 0))} /></Row>
-      <Row label="Stride length"><Input value={String(settings?.asr?.stride_length_s || 5)} type="number" onChange={(value) => update(["asr", "stride_length_s"], Number(value || 0))} /></Row>
+      <Row 
+        label="ASR backend" 
+        hint={backend === "faster-whisper" ? "Optimized engine: 2-4x faster on CPUs." : "Standard engine: Max compatibility for Apple Silicon."}
+      >
+        <Select value={backend} options={["faster-whisper", "hf-whisper"]} onChange={(value) => update(["asr", "backend"], value)} />
+      </Row>
+
+      <Row 
+        label="Whisper model" 
+        hint={model === "small" ? "Balanced: Professional accuracy and high speed." : model === "large-v3" ? "Maximum accuracy: Requires significant RAM/GPU." : "Efficiency: Fast performance with moderate accuracy."}
+      >
+        <Select value={model} options={["tiny", "base", "small", "medium", "large-v3"]} onChange={(value) => update(["asr", "model_size"], value)} />
+      </Row>
+
+      <Row label="Language" hint="Primary spoken language (e.g. 'en', 'es', 'de') or 'auto'.">
+        <Input value={settings?.asr?.language || "en"} onChange={(value) => update(["asr", "language"], value)} />
+      </Row>
+
+      <Row 
+        label="Voice activity detection (VAD)" 
+        hint="Skips silences and prevents AI hallucinations (repeating text)."
+      >
+        <Toggle on={vad} label={vad ? "Enabled (Recommended)" : "Disabled"} onChange={(value) => update(["asr", "vad"], value)} />
+      </Row>
+
+      <Row 
+        label="Chunk length" 
+        hint={isHF ? "Duration of audio segments (seconds)." : "Only required for standard hf-whisper engine."}
+      >
+        <input
+          type="number"
+          disabled={!isHF}
+          value={String(settings?.asr?.chunk_length_s || 30)}
+          onChange={(event) => update(["asr", "chunk_length_s"], Number(event.target.value || 0))}
+          className={`w-full max-w-md h-9 px-3 rounded-md border border-echo-border bg-echo-surface-2 text-[12px] text-echo-text focus:outline-none ${!isHF ? "opacity-40 grayscale pointer-events-none" : "focus:bg-echo-surface focus:border-echo-accent"}`}
+        />
+      </Row>
+
+      <Row 
+        label="Stride length" 
+        hint={isHF ? "Overlap between segments to prevent cut-off words." : "Only required for standard hf-whisper engine."}
+      >
+        <input
+          type="number"
+          disabled={!isHF}
+          value={String(settings?.asr?.stride_length_s || 5)}
+          onChange={(event) => update(["asr", "stride_length_s"], Number(event.target.value || 0))}
+          className={`w-full max-w-md h-9 px-3 rounded-md border border-echo-border bg-echo-surface-2 text-[12px] text-echo-text focus:outline-none ${!isHF ? "opacity-40 grayscale pointer-events-none" : "focus:bg-echo-surface focus:border-echo-accent"}`}
+        />
+      </Row>
     </Panel>
   );
 }

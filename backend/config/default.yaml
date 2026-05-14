@@ -83,7 +83,7 @@ asr:
   backend: faster-whisper
   model_size: small
   language: en
-  vad: false
+  vad: true
   force_hf: false
   chunk_length_s: 30
   stride_length_s: 5
