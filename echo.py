@@ -42,14 +42,15 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     },
     "summary": {
         "backend": "local",               # local | dify | azure
-        "model": os.getenv("OLLAMA_MODEL", "llama3:latest"),  # legacy; used by local as fallback
+        "model": os.getenv("OLLAMA_MODEL", "mistral-nemo:latest"),  # legacy; used by local as fallback
         "max_chars": 0,
+        "timeout": int(os.getenv("SUMMARY_TIMEOUT", "180")),
         "prompt_file": "",               # NEW: path to prompt file
         "prompt_text": "",               # NEW: inline override
     },
     "backends": {
         "local": {
-            "model": os.getenv("OLLAMA_MODEL", "llama3:latest")
+            "model": os.getenv("OLLAMA_MODEL", "mistral-nemo:latest")
         },
         "dify": {
             "base_url": "https://api.dify.ai",
@@ -190,6 +191,7 @@ def render_status(cfg: Dict[str, Any]) -> str:
 def summarize_dispatch(text: str, cfg: Dict[str, Any]) -> str:
     backend = (cfg["summary"]["backend"] or "local").lower()
     system_prompt = prompts.load_prompt(cfg)  # NEW: single-source prompt
+    timeout = int(cfg["summary"].get("timeout", 180))
     if backend == "local":
         model = cfg["backends"]["local"]["model"] or cfg["summary"]["model"]
         return helpers_local.summarize_local_ollama(text, model, system_prompt=system_prompt)
@@ -202,6 +204,7 @@ def summarize_dispatch(text: str, cfg: Dict[str, Any]) -> str:
             api_version=b["api_version"],
             deployment=b["deployment"],
             system_prompt=system_prompt,
+            timeout=timeout,
         )
     elif backend == "dify":
         b = cfg["backends"]["dify"]
@@ -210,6 +213,7 @@ def summarize_dispatch(text: str, cfg: Dict[str, Any]) -> str:
             api_key=b["api_key"],
             app_base=b.get("base_url", "https://api.dify.ai"),
             system_prompt=system_prompt,
+            timeout=timeout,
         )
     else:
         return f"[Unsupported backend: {backend}]"
@@ -285,17 +289,59 @@ def render_final(t_cap: float, t_sum: float, t_tot: float, paths: Tuple[Path | N
 # ---------------- Main generator handler ----------------
 SUPPORTED_EXTS = sorted(list(calls_helper.SUPPORTED_EXTS))
 
-def process(fileobj, url_text, cfg_state):
-    cfg = cfg_state or CONFIG
-    url_text = (url_text or "").strip()
-    has_file = bool(fileobj); has_url = bool(url_text)
+def process(fileobj, url_text,
+            _backend,
+            _local_model,
+            _dify_base, _dify_key,
+            _az_endpoint, _az_key, _az_api_ver, _az_deploy,
+            _timeout, _prompt_file, _prompt_text,
+            _outdir, _save_t, _save_s, _save_e,
+            _asr_model, _asr_lang, _asr_vad, _asr_force):
+    
+    print(f"DEBUG: Process started. Backend: {_backend}, Model: {_local_model}, Timeout: {_timeout}")
+    try:
+        # Construct a fresh config from UI inputs to ensure latest values are used
+        cfg = merge_dicts(DEFAULT_CONFIG, CONFIG)
+        cfg["summary"]["backend"] = (_backend or "local").strip().lower()
+        cfg["backends"]["local"]["model"] = (_local_model or "mistral-nemo:latest").strip()
+        cfg["backends"]["dify"]["base_url"] = (_dify_base or "https://api.dify.ai").strip()
+        cfg["backends"]["dify"]["api_key"]  = (_dify_key or "").strip()
+        cfg["backends"]["azure"]["endpoint"]   = (_az_endpoint or "").strip()
+        cfg["backends"]["azure"]["api_key"]    = (_az_key or "").strip()
+        cfg["backends"]["azure"]["api_version"]= (_az_api_ver or "2024-02-15-preview").strip()
+        cfg["backends"]["azure"]["deployment"] = (_az_deploy or "").strip()
+        
+        # Robust timeout conversion
+        try:
+            cfg["summary"]["timeout"] = int(float(_timeout)) if _timeout is not None else 180
+        except (ValueError, TypeError):
+            cfg["summary"]["timeout"] = 180
+            
+        cfg["summary"]["prompt_file"] = (_prompt_file or "").strip()
+        cfg["summary"]["prompt_text"] = (_prompt_text or "").strip()
+        cfg["output"]["dir"] = (_outdir or "./out").strip()
+        cfg["output"]["save_raw_transcript"] = bool(_save_t)
+        cfg["output"]["save_summary"]        = bool(_save_s)
+        cfg["output"]["save_email_draft"]    = bool(_save_e)
+        cfg["asr"]["model_size"] = (_asr_model or "small").strip()
+        cfg["asr"]["language"]   = (_asr_lang or "en").strip()
+        cfg["asr"]["vad"]        = bool(_asr_vad)
+        cfg["asr"]["force_hf"]   = bool(_asr_force)
 
-    if has_file and has_url:
-        yield ("", "", "Please provide either a file OR a URL, not both."); return
-    if not has_file and not has_url:
-        yield ("", "", "Please upload a file OR paste a recording URL."); return
+        url_text = (url_text or "").strip()
+        has_file = bool(fileobj); has_url = bool(url_text)
 
-    base = base_from_file(fileobj.name if hasattr(fileobj, "name") else str(fileobj)) if has_file else base_from_url(url_text)
+        print(f"DEBUG: Initialization complete. Has file: {has_file}, Has URL: {has_url}")
+
+        if has_file and has_url:
+            yield ("", "", "Please provide either a file OR a URL, not both."); return
+        if not has_file and not has_url:
+            yield ("", "", "Please upload a file OR paste a recording URL."); return
+
+        base = base_from_file(fileobj.name if hasattr(fileobj, "name") else str(fileobj)) if has_file else base_from_url(url_text)
+    except Exception as e:
+        print(f"ERROR during initialization: {e}")
+        yield ("", "", f"Initialization error: {e}"); return
 
     t0 = time.time(); t_cap_start = time.time()
     t_cap = 0.0; t_sum = 0.0
@@ -414,6 +460,7 @@ with gr.Blocks(
 
                 # Prompt inputs (file or inline)
                 gr.Markdown("---")
+                summary_timeout = gr.Number(label="Summary Timeout (seconds)", value=int(CONFIG["summary"].get("timeout", 180)))
                 prompt_file = gr.Textbox(label="Prompt file path (optional)", value=CONFIG["summary"].get("prompt_file",""), placeholder="./prompt.txt")
                 prompt_text = gr.Textbox(label="Inline prompt override (optional)", value=CONFIG["summary"].get("prompt_text",""), lines=6, placeholder="If set, used when file is empty/missing")
 
@@ -460,13 +507,13 @@ with gr.Blocks(
                 _local_model,
                 _dify_base, _dify_key,
                 _az_endpoint, _az_key, _az_api_ver, _az_deploy,
-                _prompt_file, _prompt_text,
+                _timeout, _prompt_file, _prompt_text,
                 _outdir, _save_t, _save_s, _save_e,
                 _asr_model, _asr_lang, _asr_vad, _asr_force, _cfg):
         new_cfg = merge_dicts(DEFAULT_CONFIG, _cfg or {})
         new_cfg["summary"]["backend"] = (_backend or "local").strip().lower()
         # local
-        new_cfg["backends"]["local"]["model"] = (_local_model or "llama3:latest").strip()
+        new_cfg["backends"]["local"]["model"] = (_local_model or "mistral-nemo:latest").strip()
         # dify
         new_cfg["backends"]["dify"]["base_url"] = (_dify_base or "https://api.dify.ai").strip()
         new_cfg["backends"]["dify"]["api_key"]  = (_dify_key or "").strip()
@@ -475,7 +522,8 @@ with gr.Blocks(
         new_cfg["backends"]["azure"]["api_key"]    = (_az_key or "").strip()
         new_cfg["backends"]["azure"]["api_version"]= (_az_api_ver or "2024-02-15-preview").strip()
         new_cfg["backends"]["azure"]["deployment"] = (_az_deploy or "").strip()
-        # prompt
+        # prompt & timeout
+        new_cfg["summary"]["timeout"] = int(_timeout or 180)
         new_cfg["summary"]["prompt_file"] = (_prompt_file or "").strip()
         new_cfg["summary"]["prompt_text"] = (_prompt_text or "").strip()
         # output
@@ -505,7 +553,7 @@ with gr.Blocks(
             local_model,
             dify_base, dify_key,
             az_endpoint, az_key, az_api_ver, az_deployment,
-            prompt_file, prompt_text,
+            summary_timeout, prompt_file, prompt_text,
             outdir_input, save_transcript_chk, save_summary_chk, save_eml_chk,
             asr_model_size, asr_language, asr_vad, force_hf_chk, cfg_state
         ],
@@ -558,7 +606,21 @@ with gr.Blocks(
     test_btn.click(on_test, inputs=[cfg_state], outputs=[test_result])
 
     # Main process
-    run_btn.click(process, inputs=[file_in, url_in, cfg_state], outputs=[summary_out, transcript_out, status_out])
+    run_btn.click(
+        process, 
+        inputs=[
+            file_in, 
+            url_in, 
+            backend_dd,
+            local_model,
+            dify_base, dify_key,
+            az_endpoint, az_key, az_api_ver, az_deployment,
+            summary_timeout, prompt_file, prompt_text,
+            outdir_input, save_transcript_chk, save_summary_chk, save_eml_chk,
+            asr_model_size, asr_language, asr_vad, force_hf_chk
+        ], 
+        outputs=[summary_out, transcript_out, status_out]
+    )
 
 if __name__ == "__main__":
     app.launch()

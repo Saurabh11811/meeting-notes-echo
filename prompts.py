@@ -1,25 +1,38 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Tue Aug 26 21:55:17 2025
-
-@author: saurabh.agarwal
-"""
-
 # prompts.py
 from __future__ import annotations
 from pathlib import Path
 from typing import Dict, Any
 
+# A generalized, comprehensive prompt for any meeting type.
 DEFAULT_PROMPT = (
-    "Executive-ready summary.\n"
-    "Provide sections (wherever applicable):\n"
-    "1) Key Discussions\n"
-    "2) Key Decisions\n"
-    "2) Action Items\n"
-    "3) Risks / Blockers / Challanges\n"
-    "4) Additional Notes\n"
-    "Be concise but comprehensive. Use bullet points where helpful."
+    "You are a professional scribe. Your goal is to produce detailed, structured, "
+    "and comprehensive Minutes of Meeting (MoM) from the provided transcript. "
+    "The summary must be thorough enough for someone who did not attend to understand all details.\n\n"
+    "GUIDELINES:\n"
+    "1. Be Comprehensive: Capture all specific details, including rules, dates, deadlines, and project specifics.\n"
+    "2. Attribute Statements: Where clear, attribute key points or decisions to the specific participants.\n"
+    "3. Formal Tone: Use professional and objective language.\n"
+    "4. Specificity: Use exact values, codes, or policy names mentioned in the transcript.\n\n"
+    "FORMAT:\n"
+    "# Minutes of Meeting (MoM) – [Meeting Title]\n\n"
+    "**Core Topic**: [Brief summary of purpose]\n"
+    "**Presenters/Host**: [Names]\n"
+    "**Participants**: [Key speakers/attendees]\n"
+    "**Key Dates & Deadlines**: [List specific dates mentioned]\n\n"
+    "## Summary\n"
+    "[A 2-paragraph overview of major themes and outcomes.]\n\n"
+    "## Detailed Discussion Points\n"
+    "[Organize by theme or project. Provide deep-dive details into all logic, rules, or changes discussed.]\n\n"
+    "## Decisions & Confirmations\n"
+    "[List all specific agreements and finalized items.]\n\n"
+    "## Action Items\n"
+    "| Owner | Action Item | Timeline/Status |\n"
+    "|-------|-------------|-----------------|\n"
+    "| [Name] | [Specific Task] | [Date or TBD] |\n\n"
+    "## Risks, Challenges & Dependencies\n"
+    "[Identify potential hurdles or requirements for future steps.]\n\n"
+    "## Additional Notes\n"
+    "[Any other relevant context or future schedules.]"
 )
 
 def load_prompt(cfg: Dict[str, Any]) -> str:

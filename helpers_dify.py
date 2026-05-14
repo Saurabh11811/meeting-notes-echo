@@ -9,6 +9,7 @@ def summarize_dify_native(
     app_base: str = "https://api.dify.ai",
     user_id: str = "meeting-notes-mvp",
     system_prompt: str = "",
+    timeout: int = 180,
 ) -> str:
     """
     Dify native App API (no model param). Provide your App API key & base URL.
@@ -23,19 +24,45 @@ def summarize_dify_native(
     # Native API doesn't have a separate 'system' field, so we prepend it to the query if provided.
     query = text if not system_prompt.strip() else f"[SYSTEM]\n{system_prompt.strip()}\n\n[TRANSCRIPT]\n{text}"
 
-    url = f"{app_base.rstrip('/')}/v1/chat-messages"
+    base = app_base.rstrip('/')
+    url = f"{base}/chat-messages" if base.endswith('/v1') else f"{base}/v1/chat-messages"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     payload = {
         "inputs": {},
         "query": query,
-        "response_mode": "blocking",
+        "response_mode": "streaming", # Use streaming to keep connection alive
         "user": user_id,
     }
+    
+    full_answer = []
     try:
-        r = requests.post(url, headers=headers, json=payload, timeout=120)
-        r.raise_for_status()
-        j = r.json()
-        return j.get("answer", "") or "[Dify native: empty answer]"
+        # We use stream=True and iterate over lines to handle SSE (Server-Sent Events)
+        r = requests.post(url, headers=headers, json=payload, timeout=timeout, stream=True)
+        
+        if r.status_code != 200:
+            return f"[Dify native error] {r.status_code} {r.reason}: {r.text}"
+            
+        import json
+        for line in r.iter_lines():
+            if not line:
+                continue
+            line_str = line.decode('utf-8')
+            if line_str.startswith('data: '):
+                try:
+                    data = json.loads(line_str[6:])
+                    event = data.get("event")
+                    if event == "message":
+                        full_answer.append(data.get("answer", ""))
+                    elif event == "error":
+                        return f"[Dify stream error] {data.get('message')}"
+                    elif event == "message_end":
+                        break
+                except Exception:
+                    continue
+        
+        final_text = "".join(full_answer)
+        return final_text or "[Dify native: empty answer]"
+        
     except Exception as e:
         return f"[Dify native error] {e}"
 

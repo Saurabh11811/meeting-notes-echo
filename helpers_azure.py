@@ -6,6 +6,7 @@ def summarize_azure_openai(
     text: str, *,
     endpoint: str, api_key: str, api_version: str, deployment: str,
     system_prompt: str = "",
+    timeout: int = 180,
 ) -> str:
     """
     Azure OpenAI chat completions with your deployment name.
@@ -28,7 +29,7 @@ def summarize_azure_openai(
         "temperature": 0.1,
     }
     try:
-        r = requests.post(url, headers=headers, params={"api-version": api_version}, json=payload, timeout=120)
+        r = requests.post(url, headers=headers, params={"api-version": api_version}, json=payload, timeout=timeout)
         r.raise_for_status()
         j = r.json()
         return j["choices"][0]["message"]["content"]
