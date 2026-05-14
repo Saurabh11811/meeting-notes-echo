@@ -1,17 +1,13 @@
 import { useEffect } from "react";
-import { Search, Activity, ChevronDown } from "lucide-react";
+import { Search } from "lucide-react";
 import { ThemeToggle } from "./theme-toggle";
 
 export function EchoHeader({
   breadcrumb = "Home",
   onOpenSearch,
-  onOpenActivity,
-  attentionCount = 0,
 }: {
   breadcrumb?: string;
   onOpenSearch: () => void;
-  onOpenActivity: () => void;
-  attentionCount?: number;
 }) {
   const parts = breadcrumb.split(" / ");
 
@@ -29,10 +25,9 @@ export function EchoHeader({
   return (
     <header className="h-[60px] shrink-0 px-6 border-b border-echo-border bg-echo-surface flex items-center gap-4">
       <div className="flex items-center gap-2 text-[12px] text-echo-text-muted">
-        <span>Workspace</span>
         {parts.map((p, i) => (
           <span key={i} className="flex items-center gap-2">
-            <span className="text-echo-text-faint">/</span>
+            {i > 0 && <span className="text-echo-text-faint">/</span>}
             <span className={i === parts.length - 1 ? "text-echo-text" : "text-echo-text-muted"}>{p}</span>
           </span>
         ))}
@@ -49,28 +44,7 @@ export function EchoHeader({
         </button>
       </div>
 
-      <button
-        onClick={onOpenActivity}
-        title="Activity"
-        className="relative h-9 px-2.5 grid place-items-center rounded-md hover:bg-echo-surface-hover text-echo-text-muted inline-flex items-center gap-1.5 text-[12px]"
-      >
-        <Activity size={15} />
-        <span>5</span>
-        {attentionCount > 0 && (
-          <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-echo-warning" />
-        )}
-      </button>
-
       <ThemeToggle />
-
-      <button className="flex items-center gap-2 pl-1 pr-2 py-1 rounded-md hover:bg-echo-surface-hover">
-        <div className="h-7 w-7 rounded-full bg-echo-accent grid place-items-center text-white text-[11px]" style={{ background: "linear-gradient(135deg, var(--echo-accent), var(--echo-accent-hover))" }}>PS</div>
-        <div className="text-left leading-tight">
-          <div className="text-[12px] text-echo-text">Priya Sharma</div>
-          <div className="text-[10px] text-echo-text-muted">Chief of Staff</div>
-        </div>
-        <ChevronDown size={13} className="text-echo-text-faint" />
-      </button>
     </header>
   );
 }

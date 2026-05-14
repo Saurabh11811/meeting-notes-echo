@@ -1,4 +1,4 @@
-import { Home, NotebookText, LayoutTemplate, Settings, HelpCircle } from "lucide-react";
+import { Home, NotebookText, LayoutTemplate, Settings, Info } from "lucide-react";
 import { EchoLogoLockup } from "./echo-logo-v2";
 import type { PageId } from "../App";
 
@@ -35,19 +35,15 @@ export function EchoSidebar({ current, onNavigate }: { current: PageId; onNaviga
         })}
       </nav>
 
-      <div className="px-3 py-3 border-t border-echo-border">
-        <button className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-[12px] text-echo-text-muted hover:bg-echo-surface-hover">
-          <HelpCircle size={14} />
-          <span>Help & Shortcuts</span>
-          <kbd className="ml-auto text-[10px] text-echo-text-faint">?</kbd>
-        </button>
-        <div className="mt-2 px-3 py-2.5 rounded-md bg-echo-surface-2 border border-echo-border">
-          <div className="text-[10px] text-echo-text-faint mb-1 uppercase tracking-wider">Workspace</div>
-          <div className="text-[12px] text-echo-text">Executive Office</div>
-          <div className="text-[10px] text-echo-text-faint mt-1 flex items-center gap-1.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-echo-success" />
-            v2.4.1 · all systems healthy
+      <div className="px-3 py-4 border-t border-echo-border">
+        <div className="px-3">
+          <div className="flex items-center gap-2 text-[12px] text-echo-text mb-2">
+            <Info size={14} className="text-echo-accent" />
+            <span style={{ fontWeight: 600 }}>About ECHO</span>
           </div>
+          <p className="text-[11px] text-echo-text-muted leading-relaxed">
+            ECHO is an AI-powered assistant that converts your meeting recordings and transcripts into professional, board-ready minutes.
+          </p>
         </div>
       </div>
     </aside>

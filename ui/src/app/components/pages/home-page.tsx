@@ -71,11 +71,6 @@ export function HomePage({ onOpenReview }: { onOpenReview: (meetingId: string) =
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-[22px] text-echo-text" style={{ fontWeight: 600 }}>Good afternoon, Priya</h1>
-        <p className="text-[13px] text-echo-text-muted mt-1">Convert a meeting into professional minutes in under a minute.</p>
-      </div>
-
       <CreateBlock onCreated={refreshHome} />
 
       <div className="grid grid-cols-1 xl:grid-cols-5 gap-5">
@@ -93,8 +88,6 @@ function CreateBlock({ onCreated }: { onCreated: () => Promise<void> }) {
   const [linkText, setLinkText] = useState("");
   const [transcriptText, setTranscriptText] = useState("");
   const [meetingType, setMeetingType] = useState("Executive");
-  const [template, setTemplate] = useState("Executive MoM");
-  const [confidentiality, setConfidentiality] = useState("Internal");
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -124,16 +117,12 @@ function CreateBlock({ onCreated }: { onCreated: () => Promise<void> }) {
         ? await createUploadJobs({
             files,
             meeting_type: meetingType,
-            template_name: template,
-            confidentiality,
             run_now: runNow,
           })
         : await createJobs({
             source_type: sourceType,
             sources,
             meeting_type: meetingType,
-            template_name: template,
-            confidentiality,
             run_now: runNow,
           });
       setMessage(
@@ -232,24 +221,15 @@ function CreateBlock({ onCreated }: { onCreated: () => Promise<void> }) {
 
       <div className="px-6 py-3 border-t border-echo-border bg-echo-surface-2/50 rounded-b-lg flex items-center gap-3 flex-wrap">
         <OptionSelect label="Type" value={meetingType} options={["Executive", "Project Review", "Client Call", "Townhall", "Demo/UAT", "Incident"]} onChange={setMeetingType} />
-        <OptionSelect label="Template" value={template} options={["Executive MoM", "Project Review", "Client Call", "Townhall", "Demo/UAT", "Incident Review"]} onChange={setTemplate} />
-        <OptionSelect label="Confidentiality" value={confidentiality} options={["Internal", "Confidential", "Restricted"]} onChange={setConfidentiality} />
-        <button className="text-[11px] text-echo-text-muted hover:text-echo-text ml-auto">Advanced ▾</button>
 
         <div className="w-full flex items-center gap-2 pt-1">
           <button disabled={submitting} onClick={() => submit(true)} className="inline-flex items-center gap-2 h-9 px-4 rounded-md bg-echo-accent hover:bg-echo-accent-hover text-white text-[13px] shadow-sm disabled:opacity-60" style={{ color: "#fff" }}>
             <Sparkles size={14} />
             {submitting ? "Adding…" : bulk ? "Generate all MoMs" : "Generate MoM"}
           </button>
-          {bulk && (
-            <button disabled={submitting} onClick={() => submit(false)} className="inline-flex items-center gap-2 h-9 px-3 rounded-md border border-echo-border bg-echo-surface text-echo-text text-[13px] hover:bg-echo-surface-hover disabled:opacity-60">
-              <Layers size={14} />
-              Queue for later
-            </button>
-          )}
-          <button disabled={submitting} onClick={() => submit(false)} className="inline-flex items-center gap-1 h-9 px-3 rounded-md text-echo-text-muted hover:text-echo-text text-[13px] disabled:opacity-60">
+          <button disabled={submitting} onClick={() => submit(false)} className="inline-flex items-center gap-2 h-9 px-3 rounded-md border border-echo-border bg-echo-surface text-echo-text text-[13px] hover:bg-echo-surface-hover disabled:opacity-60">
             <Plus size={14} />
-            Save as draft
+            Add to queue
           </button>
           {message && <span className="text-[12px] text-echo-text-muted ml-auto">{message}</span>}
         </div>
