@@ -43,6 +43,7 @@ export function MeetingDetailPage({ meetingId, onBack }: { meetingId: string | n
   const [regenerating, setRegenerating] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const meeting = detail?.meeting;
 
   const loadDetail = async () => {
     if (!meetingId) {
@@ -84,7 +85,6 @@ export function MeetingDetailPage({ meetingId, onBack }: { meetingId: string | n
     setTemplateName(preferred?.name || "");
   }, [meeting, templates, templateName]);
 
-  const meeting = detail?.meeting;
   const selectedMom = useMemo(() => {
     if (!detail) return null;
     return detail.mom_versions.find((version) => version.id === selectedVersionId) || detail.latest_mom;
