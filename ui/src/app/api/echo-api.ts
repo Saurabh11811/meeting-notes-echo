@@ -87,6 +87,14 @@ export type MomVersion = {
 export type MeetingDetail = {
   meeting: MeetingSummary & {
     tags_json?: string;
+    meeting_occurred_at?: string | null;
+    mom_generated_at?: string | null;
+    source_info?: {
+      label: string;
+      display: string;
+      href: string;
+      kind: string;
+    };
   };
   latest_mom: MomVersion | null;
   mom_versions: MomVersion[];
@@ -141,6 +149,12 @@ export type MeetingDetail = {
       created_at: string;
     }>;
   }>;
+};
+
+export type RegenerateMeetingRequest = {
+  template_name: string;
+  backend_kind?: string;
+  run_now?: boolean;
 };
 
 export type JobCreateRequest = {
@@ -214,6 +228,18 @@ export function getMeetings() {
 
 export function getMeetingDetail(meetingId: string) {
   return request<MeetingDetail>(`/meetings/${encodeURIComponent(meetingId)}`);
+}
+
+export function regenerateMeeting(meetingId: string, payload: RegenerateMeetingRequest) {
+  return send<{ job: Record<string, unknown>; started: Record<string, unknown> | null }>(
+    `/meetings/${encodeURIComponent(meetingId)}/regenerate`,
+    "POST",
+    payload,
+  );
+}
+
+export function meetingExportUrl(meetingId: string, exportType: "pdf" | "email" | "text") {
+  return `${API_BASE}/meetings/${encodeURIComponent(meetingId)}/exports/${exportType}`;
 }
 
 export function getSettings() {

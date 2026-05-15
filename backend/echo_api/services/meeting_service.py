@@ -1,6 +1,14 @@
 from __future__ import annotations
 
+import json
+import re
+from datetime import datetime, timezone
+from pathlib import Path
+from uuid import uuid4
+
+from echo_api.core.paths import storage_path
 from echo_api.db.connection import db_session
+from echo_api.services.processing_service import now_iso, start_job
 
 
 def list_meetings(limit: int = 100) -> list[dict]:
@@ -128,9 +136,15 @@ def get_meeting_detail(meeting_id: str) -> dict | None:
                 ).fetchall()
             ]
 
+    meeting_dict = dict(meeting)
+    latest_mom = mom_versions[0] if mom_versions else None
+    meeting_dict["meeting_occurred_at"] = infer_meeting_occurred_at(meeting_dict)
+    meeting_dict["source_info"] = source_info(meeting_dict)
+    meeting_dict["mom_generated_at"] = latest_mom["created_at"] if latest_mom else None
+
     return {
-        "meeting": dict(meeting),
-        "latest_mom": mom_versions[0] if mom_versions else None,
+        "meeting": meeting_dict,
+        "latest_mom": latest_mom,
         "mom_versions": mom_versions,
         "transcript": dict(transcript) if transcript else None,
         "decisions": decisions,
@@ -138,3 +152,251 @@ def get_meeting_detail(meeting_id: str) -> dict | None:
         "risks": risks,
         "jobs": jobs,
     }
+
+
+def regenerate_meeting_mom(
+    meeting_id: str,
+    *,
+    template_name: str = "Executive MoM",
+    backend_kind: str = "",
+    run_now: bool = True,
+) -> dict:
+    now = now_iso()
+    with db_session() as conn:
+        meeting = conn.execute(
+            "SELECT id, title, meeting_type FROM meetings WHERE id = ?",
+            (meeting_id,),
+        ).fetchone()
+        if not meeting:
+            raise ValueError("Meeting not found.")
+        transcript = conn.execute(
+            "SELECT id FROM transcripts WHERE meeting_id = ? ORDER BY created_at DESC LIMIT 1",
+            (meeting_id,),
+        ).fetchone()
+        if not transcript:
+            raise ValueError("This meeting has no saved transcript to regenerate from.")
+
+        job_id = str(uuid4())
+        stage = "Ready to create MoM" if run_now else "Waiting"
+        conn.execute(
+            """
+            INSERT INTO queue_jobs (
+              id, meeting_id, job_type, source_type, source_payload_json, stage,
+              progress, status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                job_id,
+                meeting_id,
+                "regenerate_mom",
+                "transcript",
+                json.dumps(
+                    {
+                        "title": meeting["title"],
+                        "source": "saved transcript",
+                        "template_name": template_name or meeting["meeting_type"] or "Executive MoM",
+                        "backend_kind": backend_kind,
+                        "auto_start": bool(run_now),
+                    }
+                ),
+                stage,
+                0,
+                "queued",
+                now,
+                now,
+            ),
+        )
+        conn.execute(
+            "UPDATE meetings SET status = ?, updated_at = ? WHERE id = ?",
+            ("Queued" if not run_now else "Ready to create MoM", now, meeting_id),
+        )
+
+    if run_now:
+        started = start_job(job_id)
+    else:
+        started = None
+    return {
+        "job": {
+            "id": job_id,
+            "meeting_id": meeting_id,
+            "stage": stage,
+            "status": "queued",
+            "progress": 0,
+        },
+        "started": started,
+    }
+
+
+def create_mom_export(meeting_id: str, export_type: str) -> Path:
+    detail = get_meeting_detail(meeting_id)
+    if not detail or not detail.get("latest_mom"):
+        raise ValueError("No MoM is available to export.")
+    mom = detail["latest_mom"]
+    meeting = detail["meeting"]
+    content = mom.get("content_markdown") or mom.get("summary") or ""
+    title = meeting.get("title") or "Meeting notes"
+    export_dir = storage_path("exports")
+    stem = safe_filename(f"{title}_v{mom.get('version_number', 1)}")
+
+    if export_type == "email":
+        path = export_dir / f"{stem}.eml"
+        path.write_text(email_draft(title, content), encoding="utf-8")
+        return path
+    if export_type == "text":
+        path = export_dir / f"{stem}.txt"
+        path.write_text(content, encoding="utf-8")
+        return path
+    if export_type == "pdf":
+        path = export_dir / f"{stem}.pdf"
+        write_simple_pdf(path, title, content)
+        return path
+    raise ValueError("Unsupported export type.")
+
+
+def infer_meeting_occurred_at(meeting: dict) -> str | None:
+    candidates = [meeting.get("title", ""), meeting.get("source_label", "")]
+    for candidate in candidates:
+        match = re.search(r"(20\d{6})[_-](\d{4,6})", candidate or "")
+        if not match:
+            continue
+        date_part, time_part = match.groups()
+        if len(time_part) == 4:
+            time_part = f"{time_part}00"
+        try:
+            return datetime.strptime(f"{date_part}{time_part[:6]}", "%Y%m%d%H%M%S").isoformat()
+        except ValueError:
+            continue
+
+    if meeting.get("source_type") == "upload" and meeting.get("source_label"):
+        path = Path(meeting["source_label"])
+        if path.exists():
+            stat = path.stat()
+            created = getattr(stat, "st_birthtime", stat.st_mtime)
+            return datetime.fromtimestamp(created, tz=timezone.utc).isoformat()
+    return None
+
+
+def source_info(meeting: dict) -> dict:
+    source_type = meeting.get("source_type") or "unknown"
+    source_label = meeting.get("source_label") or ""
+    if source_type == "url":
+        return {
+            "label": "Meeting link",
+            "display": "Open meeting link",
+            "href": source_label if source_label.startswith(("http://", "https://")) else "",
+            "kind": "external",
+        }
+    if source_type == "upload":
+        path = Path(source_label)
+        return {
+            "label": "Recording file",
+            "display": path.name or "Uploaded recording",
+            "href": path.resolve().as_uri() if source_label and path.exists() else "",
+            "kind": "file",
+        }
+    if source_type == "transcript":
+        return {"label": "Source", "display": "Pasted transcript", "href": "", "kind": "transcript"}
+    return {"label": "Source", "display": source_label or source_type, "href": "", "kind": source_type}
+
+
+def safe_filename(value: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", value).strip("._")
+    return cleaned[:120] or "meeting_notes"
+
+
+def email_draft(title: str, content: str) -> str:
+    return (
+        f"Subject: Meeting notes - {title}\n"
+        "Content-Type: text/plain; charset=utf-8\n\n"
+        "Hi,\n\n"
+        "Please find the meeting notes below.\n\n"
+        f"{content}\n"
+    )
+
+
+def write_simple_pdf(path: Path, title: str, content: str) -> None:
+    lines = [title, "", *content.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
+    pages: list[list[str]] = []
+    current: list[str] = []
+    for line in lines:
+        wrapped = wrap_pdf_line(line, 86) or [""]
+        for part in wrapped:
+            if len(current) >= 46:
+                pages.append(current)
+                current = []
+            current.append(part)
+    if current:
+        pages.append(current)
+    if not pages:
+        pages = [["No content"]]
+
+    objects: list[bytes] = []
+
+    def add_object(body: bytes) -> int:
+        objects.append(body)
+        return len(objects)
+
+    font_id = add_object(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
+    content_ids: list[int] = []
+    page_ids: list[int] = []
+    for page in pages:
+        stream = pdf_page_stream(page)
+        content_ids.append(add_object(b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"\nendstream"))
+    for content_id in content_ids:
+        page_ids.append(
+            add_object(
+                f"<< /Type /Page /Parent {{PAGES}} 0 R /MediaBox [0 0 612 792] "
+                f"/Resources << /Font << /F1 {font_id} 0 R >> >> /Contents {content_id} 0 R >>".encode()
+            )
+        )
+    kids = " ".join(f"{page_id} 0 R" for page_id in page_ids)
+    pages_id = add_object(f"<< /Type /Pages /Kids [{kids}] /Count {len(page_ids)} >>".encode())
+    catalog_id = add_object(f"<< /Type /Catalog /Pages {pages_id} 0 R >>".encode())
+
+    fixed_objects = [body.replace(b"{PAGES}", str(pages_id).encode()) for body in objects]
+    chunks = [b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n"]
+    offsets = [0]
+    for index, body in enumerate(fixed_objects, start=1):
+        offsets.append(sum(len(chunk) for chunk in chunks))
+        chunks.append(f"{index} 0 obj\n".encode() + body + b"\nendobj\n")
+    xref_offset = sum(len(chunk) for chunk in chunks)
+    chunks.append(f"xref\n0 {len(fixed_objects) + 1}\n0000000000 65535 f \n".encode())
+    for offset in offsets[1:]:
+        chunks.append(f"{offset:010d} 00000 n \n".encode())
+    chunks.append(
+        f"trailer\n<< /Size {len(fixed_objects) + 1} /Root {catalog_id} 0 R >>\n"
+        f"startxref\n{xref_offset}\n%%EOF\n".encode()
+    )
+    path.write_bytes(b"".join(chunks))
+
+
+def wrap_pdf_line(line: str, limit: int) -> list[str]:
+    words = line.split()
+    if not words:
+        return [""]
+    lines: list[str] = []
+    current = ""
+    for word in words:
+        candidate = f"{current} {word}".strip()
+        if len(candidate) <= limit:
+            current = candidate
+            continue
+        if current:
+            lines.append(current)
+        current = word
+    if current:
+        lines.append(current)
+    return lines
+
+
+def pdf_page_stream(lines: list[str]) -> bytes:
+    body = ["BT", "/F1 10 Tf", "50 750 Td", "14 TL"]
+    for line in lines:
+        body.append(f"({escape_pdf_text(line)}) Tj")
+        body.append("T*")
+    body.append("ET")
+    return "\n".join(body).encode("latin-1", errors="replace")
+
+
+def escape_pdf_text(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")

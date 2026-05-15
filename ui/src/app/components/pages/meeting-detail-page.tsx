@@ -1,36 +1,128 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { ArrowLeft, Share2, Download, RefreshCw, Calendar, Link2, FileText, ChevronRight, Copy, Mail, FileType2, Sparkles, AlertTriangle, Search, Clock, CheckCircle2 } from "lucide-react";
-import { getMeetingDetail, type MeetingDetail, type MomVersion } from "../../api/echo-api";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import {
+  ArrowLeft,
+  Calendar,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  Download,
+  FileText,
+  FileType2,
+  Link2,
+  Mail,
+  RefreshCw,
+  Search,
+  Sparkles,
+} from "lucide-react";
+import {
+  getMeetingDetail,
+  getSettings,
+  meetingExportUrl,
+  regenerateMeeting,
+  type EchoSettings,
+  type MeetingDetail,
+  type MomVersion,
+} from "../../api/echo-api";
 
-const tabs = ["Executive Summary", "Decisions", "Action Items", "Risks & Blockers", "Full MoM", "Transcript", "Versions", "Exports"];
+const tabs = ["MoM", "Transcript", "Versions", "Exports"];
 
 export function MeetingDetailPage({ meetingId, onBack }: { meetingId: string | null; onBack: () => void }) {
-  const [tab, setTab] = useState("Executive Summary");
+  const [tab, setTab] = useState("MoM");
   const [detail, setDetail] = useState<MeetingDetail | null>(null);
+  const [settings, setSettings] = useState<EchoSettings | null>(null);
+  const [selectedVersionId, setSelectedVersionId] = useState("");
+  const [expandedVersionIds, setExpandedVersionIds] = useState<string[]>([]);
+  const [templateName, setTemplateName] = useState("Executive MoM");
+  const [backendKind, setBackendKind] = useState("");
   const [loading, setLoading] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
-  useEffect(() => {
+  const loadDetail = async () => {
     if (!meetingId) {
       setDetail(null);
       setError("");
       return;
     }
     setLoading(true);
-    getMeetingDetail(meetingId)
-      .then((data) => {
-        setDetail(data);
-        setError("");
-      })
-      .catch((err) => {
-        setDetail(null);
-        setError(err instanceof Error ? err.message : "Could not load meeting.");
-      })
-      .finally(() => setLoading(false));
+    try {
+      const data = await getMeetingDetail(meetingId);
+      setDetail(data);
+      setError("");
+      setSelectedVersionId((current) => current || data.latest_mom?.id || data.mom_versions[0]?.id || "");
+      setTemplateName((current) => current || data.meeting.meeting_type || "Executive MoM");
+      setBackendKind((current) => current || data.latest_mom?.backend_kind || "");
+    } catch (err) {
+      setDetail(null);
+      setError(err instanceof Error ? err.message : "Could not load meeting.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadDetail();
   }, [meetingId]);
 
+  useEffect(() => {
+    getSettings().then((data) => {
+      setSettings(data);
+      setBackendKind((current) => current || data?.summary?.default_backend || "");
+      setTemplateName((current) => current || data?.summary?.default_template || "Executive MoM");
+    }).catch(() => setSettings(null));
+  }, []);
+
   const meeting = detail?.meeting;
-  const latestMom = detail?.latest_mom;
+  const selectedMom = useMemo(() => {
+    if (!detail) return null;
+    return detail.mom_versions.find((version) => version.id === selectedVersionId) || detail.latest_mom;
+  }, [detail, selectedVersionId]);
+  const templateOptions = useMemo(() => templateNames(settings, meeting?.meeting_type), [settings, meeting?.meeting_type]);
+  const backendOptions = useMemo(() => backendProfiles(settings, selectedMom?.backend_kind), [settings, selectedMom?.backend_kind]);
+
+  const handleViewVersion = (versionId: string) => {
+    setSelectedVersionId(versionId);
+    setTab("MoM");
+  };
+
+  const toggleVersionExpanded = (versionId: string) => {
+    setExpandedVersionIds((current) => (
+      current.includes(versionId)
+        ? current.filter((id) => id !== versionId)
+        : [...current, versionId]
+    ));
+  };
+
+  const handleCopy = async (text: string, label = "Copied") => {
+    if (!text.trim()) {
+      setMessage("Nothing to copy.");
+      return;
+    }
+    await navigator.clipboard.writeText(text);
+    setMessage(label);
+  };
+
+  const handleRegenerate = async () => {
+    if (!meetingId) return;
+    setRegenerating(true);
+    setMessage("");
+    try {
+      await regenerateMeeting(meetingId, {
+        template_name: templateName,
+        backend_kind: backendKind,
+        run_now: true,
+      });
+      setMessage("Regeneration queued. The next version will appear when processing finishes.");
+      await loadDetail();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Could not regenerate this MoM.");
+    } finally {
+      setRegenerating(false);
+    }
+  };
 
   if (!meetingId) {
     return (
@@ -40,10 +132,10 @@ export function MeetingDetailPage({ meetingId, onBack }: { meetingId: string | n
     );
   }
 
-  if (loading) {
+  if (loading && !detail) {
     return (
       <EmptyShell onBack={onBack} title="Loading meeting">
-        Reading meeting notes, transcript, and job history from the local database.
+        Reading meeting notes and transcript from the local database.
       </EmptyShell>
     );
   }
@@ -58,53 +150,53 @@ export function MeetingDetailPage({ meetingId, onBack }: { meetingId: string | n
 
   return (
     <div className="space-y-5">
-      <div>
-        <button onClick={onBack} className="text-[14px] text-echo-text-muted hover:text-echo-text inline-flex items-center gap-1 mb-3"><ArrowLeft size={13} />Back to Meeting Notes</button>
+      <button onClick={onBack} className="text-[14px] text-echo-text-muted hover:text-echo-text inline-flex items-center gap-1">
+        <ArrowLeft size={13} />Back to Meeting Notes
+      </button>
 
-        <div className="bg-echo-surface border border-echo-border rounded-lg p-5">
-          <div className="flex items-start gap-4 flex-wrap">
-            <div className="flex-1 min-w-[300px]">
-              <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                <span className="text-[14px] px-1.5 py-0.5 rounded bg-echo-surface-2 text-echo-text-muted">{meeting.meeting_type}</span>
-                <span className="text-[14px] px-1.5 py-0.5 rounded bg-echo-surface-2 text-echo-text-muted">{meeting.confidentiality}</span>
-                <span className="text-[14px] px-1.5 py-0.5 rounded bg-echo-surface-2 text-echo-text-muted">{meeting.status}</span>
-              </div>
-              <h1 className="text-[26px] text-echo-text" style={{ fontWeight: 700 }}>{meeting.title}</h1>
-              <div className="mt-2 flex items-center gap-4 text-[14px] text-echo-text-muted flex-wrap">
-                <span className="inline-flex items-center gap-1"><Calendar size={12} />{formatDateTime(meeting.updated_at || meeting.created_at)}</span>
-                <span className="inline-flex items-center gap-1"><Link2 size={12} />{meeting.source_label || meeting.source_type}</span>
-                <span className="inline-flex items-center gap-1"><FileText size={12} />{detail.transcript ? "Transcript available" : "No transcript stored"}</span>
-                <span>v{latestMom?.version_number || 0} {latestMom ? `via ${latestMom.backend_kind || "backend"}` : ""}</span>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button disabled className="h-10 px-4 rounded-md border border-echo-border bg-echo-surface text-[14px] text-echo-text-muted inline-flex items-center gap-1.5 cursor-not-allowed"><Share2 size={15} />Share</button>
-              <button disabled className="h-10 px-4 rounded-md border border-echo-border bg-echo-surface text-[14px] text-echo-text-muted inline-flex items-center gap-1.5 cursor-not-allowed"><Download size={15} />Export</button>
-              <button disabled className="h-10 px-4 rounded-md bg-echo-accent text-white/80 text-[14px] inline-flex items-center gap-1.5 cursor-not-allowed"><RefreshCw size={15} />Regenerate</button>
+      <section className="bg-echo-surface border border-echo-border rounded-lg p-5">
+        <div className="flex items-start gap-5">
+          <div className="flex-1 min-w-0">
+            <h1 className="text-[26px] text-echo-text leading-tight" style={{ fontWeight: 700 }}>{meeting.title}</h1>
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3 text-[14px]">
+              <MetadataItem icon={<Calendar size={15} />} label="Meeting date" value={formatDateTimeNullable(meeting.meeting_occurred_at)} />
+              <MetadataItem icon={<FileText size={15} />} label="MoM generated" value={formatDateTimeNullable(meeting.mom_generated_at || selectedMom?.created_at)} />
+              <SourceItem source={meeting.source_info} fallback={meeting.source_label || meeting.source_type} />
             </div>
           </div>
         </div>
-      </div>
+      </section>
 
-      <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-5">
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_340px] gap-5">
         <div className="space-y-3 min-w-0">
-          <div className="bg-echo-surface border border-echo-border rounded-lg px-2 overflow-x-auto">
+          <div className="bg-echo-surface border border-echo-border rounded-lg px-2 overflow-hidden">
             <div className="flex gap-1">
-              {tabs.map((t) => (
-                <button key={t} onClick={() => setTab(t)} className={`px-3.5 py-3 text-[14px] whitespace-nowrap border-b-2 -mb-px ${tab === t ? "border-echo-accent text-echo-accent-fg" : "border-transparent text-echo-text-muted hover:text-echo-text"}`}>{t}</button>
+              {tabs.map((item) => (
+                <button
+                  key={item}
+                  onClick={() => setTab(item)}
+                  className={`px-3.5 py-3 text-[14px] whitespace-nowrap border-b-2 -mb-px ${tab === item ? "border-echo-accent text-echo-accent-fg" : "border-transparent text-echo-text-muted hover:text-echo-text"}`}
+                >
+                  {item}
+                </button>
               ))}
             </div>
           </div>
 
           <section className="bg-echo-surface border border-echo-border rounded-lg p-6 min-h-[420px]">
-            {tab === "Executive Summary" && <ExecutiveSummary mom={latestMom} />}
-            {tab === "Decisions" && <DecisionsTab decisions={detail.decisions} />}
-            {tab === "Action Items" && <ActionItemsTab items={detail.action_items} />}
-            {tab === "Risks & Blockers" && <RisksTab risks={detail.risks} />}
-            {tab === "Full MoM" && <FullMoMTab mom={latestMom} />}
-            {tab === "Transcript" && <TranscriptTab transcript={detail.transcript} />}
-            {tab === "Versions" && <VersionsTab versions={detail.mom_versions} />}
-            {tab === "Exports" && <ExportsTab />}
+            {tab === "MoM" && <MomTab mom={selectedMom} onCopy={() => handleCopy(momText(selectedMom), "MoM copied.")} />}
+            {tab === "Transcript" && <TranscriptTab transcript={detail.transcript} onCopy={() => handleCopy(detail.transcript?.text || "", "Transcript copied.")} />}
+            {tab === "Versions" && (
+              <VersionsTab
+                versions={detail.mom_versions}
+                selectedId={selectedVersionId}
+                expandedIds={expandedVersionIds}
+                onSelect={setSelectedVersionId}
+                onToggle={toggleVersionExpanded}
+                onView={handleViewVersion}
+              />
+            )}
+            {tab === "Exports" && <ExportsTab meetingId={meetingId} mom={selectedMom} onCopy={() => handleCopy(momText(selectedMom), "Full MoM copied.")} />}
           </section>
         </div>
 
@@ -112,22 +204,31 @@ export function MeetingDetailPage({ meetingId, onBack }: { meetingId: string | n
           <section className="bg-echo-surface border border-echo-border rounded-lg">
             <div className="px-4 py-3 border-b border-echo-border text-[16px] text-echo-text" style={{ fontWeight: 700 }}>Regenerate</div>
             <div className="p-4 space-y-3 text-[14px]">
-              <InfoField label="Template" value={meeting.meeting_type || "Default"} />
-              <InfoField label="Summary backend" value={latestMom?.backend_kind || "Not generated"} />
-              <button disabled className="w-full h-10 rounded-md bg-echo-text/80 text-echo-surface inline-flex items-center justify-center gap-1.5 cursor-not-allowed"><Sparkles size={15} />Regenerate MoM</button>
-              <p className="text-[14px] text-echo-text-muted">Regenerate from saved transcript is the next workflow to wire.</p>
+              <SelectField label="Template" value={templateName} options={templateOptions} onChange={setTemplateName} />
+              <SelectField label="Summary backend" value={backendKind} options={backendOptions} onChange={setBackendKind} />
+              <button
+                onClick={handleRegenerate}
+                disabled={regenerating || !detail.transcript}
+                className="w-full h-10 rounded-md bg-echo-accent text-white inline-flex items-center justify-center gap-1.5 disabled:opacity-55 disabled:cursor-not-allowed"
+              >
+                <Sparkles size={15} />{regenerating ? "Regenerating..." : "Regenerate MoM"}
+              </button>
+              <p className="text-[13px] text-echo-text-muted">
+                Creates a new version from the saved transcript using the selected template and backend.
+              </p>
             </div>
           </section>
 
           <section className="bg-echo-surface border border-echo-border rounded-lg">
             <div className="px-4 py-3 border-b border-echo-border text-[16px] text-echo-text" style={{ fontWeight: 700 }}>Version history</div>
-            <VersionList versions={detail.mom_versions} />
+            <VersionList versions={detail.mom_versions} selectedId={selectedVersionId} onSelect={setSelectedVersionId} />
           </section>
 
-          <section className="bg-echo-surface border border-echo-border rounded-lg">
-            <div className="px-4 py-3 border-b border-echo-border text-[16px] text-echo-text" style={{ fontWeight: 700 }}>Job log</div>
-            <JobLog jobs={detail.jobs} />
-          </section>
+          {message && (
+            <div className="bg-echo-surface border border-echo-border rounded-lg p-4 text-[14px] text-echo-text-muted">
+              {message}
+            </div>
+          )}
         </aside>
       </div>
     </div>
@@ -146,103 +247,69 @@ function EmptyShell({ onBack, title, children }: { onBack: () => void; title: st
   );
 }
 
-function InfoField({ label, value }: { label: string; value: string }) {
+function MetadataItem({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-echo-border bg-echo-surface-2 px-3 py-2.5 min-w-0">
+      <div className="flex items-center gap-1.5 text-[12px] text-echo-text-faint uppercase tracking-wide">{icon}{label}</div>
+      <div className="mt-1 text-[14px] text-echo-text truncate">{value}</div>
+    </div>
+  );
+}
+
+function SourceItem({ source, fallback }: { source?: MeetingDetail["meeting"]["source_info"]; fallback: string }) {
+  const label = source?.label || "Source";
+  const display = source?.display || fallback || "N/A";
+  return (
+    <div className="rounded-md border border-echo-border bg-echo-surface-2 px-3 py-2.5 min-w-0">
+      <div className="flex items-center gap-1.5 text-[12px] text-echo-text-faint uppercase tracking-wide"><Link2 size={15} />{label}</div>
+      {source?.href ? (
+        <a href={source.href} target="_blank" rel="noreferrer" className="mt-1 text-[14px] text-echo-accent hover:text-echo-accent-hover truncate block">
+          {display}
+        </a>
+      ) : (
+        <div className="mt-1 text-[14px] text-echo-text truncate">{display || "N/A"}</div>
+      )}
+    </div>
+  );
+}
+
+function SelectField({ label, value, options, onChange }: { label: string; value: string; options: Array<{ value: string; label: string }>; onChange: (value: string) => void }) {
+  return (
+    <label className="block">
+      <span className="text-[12px] text-echo-text-muted mb-1 uppercase tracking-wide block">{label}</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full h-10 px-3 rounded-md border border-echo-border bg-echo-surface-2 text-[14px] text-echo-text focus:outline-none focus:bg-echo-surface focus:border-echo-accent"
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function MomTab({ mom, onCopy }: { mom: MomVersion | null; onCopy: () => void }) {
+  const text = momText(mom);
+  if (!mom) return <EmptyState title="No MoM generated yet" body="This meeting has no saved MoM version." />;
   return (
     <div>
-      <div className="text-[12px] text-echo-text-muted mb-1 uppercase tracking-wide">{label}</div>
-      <div className="w-full min-h-9 px-3 py-2 rounded-md border border-echo-border bg-echo-surface-2 text-[14px] text-echo-text">{value}</div>
-    </div>
-  );
-}
-
-function ExecutiveSummary({ mom }: { mom: MomVersion | null }) {
-  if (!mom) return <EmptyState title="No MoM generated yet" body="This meeting has no saved summary version." />;
-  return (
-    <div className="space-y-5 text-[14px] text-echo-text leading-relaxed">
-      <div>
-        <h3 className="text-[13px] text-echo-text-muted uppercase tracking-wide mb-2">Brief summary</h3>
-        <p className="whitespace-pre-wrap">{mom.summary || "No separate brief summary was stored for this MoM."}</p>
-      </div>
-      <div>
-        <h3 className="text-[13px] text-echo-text-muted uppercase tracking-wide mb-2">Generated output</h3>
-        <div className="rounded-md border border-echo-border bg-echo-surface-2 p-4 whitespace-pre-wrap max-h-[480px] overflow-auto">{mom.content_markdown || "No MoM content was stored."}</div>
-      </div>
-    </div>
-  );
-}
-
-function DecisionsTab({ decisions }: { decisions: MeetingDetail["decisions"] }) {
-  if (decisions.length === 0) return <EmptyState title="No structured decisions yet" body="The raw MoM is stored, but decision extraction has not produced separate rows for this meeting." />;
-  return (
-    <div className="divide-y divide-echo-border -mx-6 -my-6">
-      {decisions.map((d, i) => (
-        <div key={d.id} className="px-6 py-4">
-          <div className="flex items-start gap-3">
-            <div className="h-7 w-7 rounded-full bg-echo-accent-bg text-echo-accent-fg grid place-items-center text-[13px] shrink-0">{i + 1}</div>
-            <div className="flex-1">
-              <div className="text-[15px] text-echo-text" style={{ fontWeight: 600 }}>{d.description}</div>
-              {d.context && <p className="text-[14px] text-echo-text-muted mt-1">{d.context}</p>}
-              <div className="text-[14px] text-echo-text-muted mt-2">{d.source_ref ? <>Transcript reference <span className="font-mono">{d.source_ref}</span></> : "No transcript reference stored"}</div>
-            </div>
-          </div>
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <div>
+          <h2 className="text-[18px] text-echo-text" style={{ fontWeight: 700 }}>MoM v{mom.version_number}</h2>
+          <p className="text-[13px] text-echo-text-muted mt-0.5">Generated {formatDateTimeNullable(mom.created_at)}{mom.backend_kind ? ` using ${mom.backend_kind}` : ""}</p>
         </div>
-      ))}
+        <button onClick={onCopy} className="h-9 px-3 rounded-md border border-echo-border bg-echo-surface text-[14px] text-echo-text inline-flex items-center gap-1.5 hover:bg-echo-surface-hover">
+          <Copy size={14} />Copy MoM
+        </button>
+      </div>
+      <article>{text ? <MarkdownMom text={text} /> : <p className="text-[15px] text-echo-text">No MoM content was stored.</p>}</article>
     </div>
   );
 }
 
-function ActionItemsTab({ items }: { items: MeetingDetail["action_items"] }) {
-  if (items.length === 0) return <EmptyState title="No structured action items yet" body="The raw MoM is stored, but action item extraction has not produced separate rows for this meeting." />;
-  return (
-    <table className="w-full text-[14px] -mx-6 -my-6" style={{ width: "calc(100% + 3rem)" }}>
-      <thead className="bg-echo-surface-2 text-echo-text-muted">
-        <tr>
-          <th className="text-left px-6 py-3" style={{ fontWeight: 650 }}>Action</th>
-          <th className="text-left px-3 py-3" style={{ fontWeight: 650 }}>Owner</th>
-          <th className="text-left px-3 py-3" style={{ fontWeight: 650 }}>Due</th>
-          <th className="text-left px-6 py-3" style={{ fontWeight: 650 }}>Status</th>
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-echo-border">
-        {items.map((a) => (
-          <tr key={a.id} className="hover:bg-echo-surface-hover">
-            <td className="px-6 py-3.5 text-echo-text">{a.description}</td>
-            <td className="px-3 py-3.5 text-echo-text-muted">{a.owner || "Unassigned"}</td>
-            <td className="px-3 py-3.5 text-echo-text-muted">{a.due_date || "No due date"}</td>
-            <td className="px-6 py-3.5 text-echo-text">{a.status}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-function RisksTab({ risks }: { risks: MeetingDetail["risks"] }) {
-  if (risks.length === 0) return <EmptyState title="No structured risks yet" body="The raw MoM is stored, but risk extraction has not produced separate rows for this meeting." />;
-  return (
-    <ul className="space-y-3">
-      {risks.map((r) => (
-        <li key={r.id} className="border border-echo-border rounded-md p-4 flex items-start gap-3 bg-echo-surface">
-          <div className="h-8 w-8 rounded-md bg-rose-500/[0.12] grid place-items-center text-echo-danger shrink-0"><AlertTriangle size={14} /></div>
-          <div className="flex-1">
-            <div className="flex items-center gap-2">
-              <div className="text-[14px] text-echo-text">{r.description}</div>
-              <span className="text-[14px] px-1.5 py-0.5 rounded bg-amber-500/[0.15] text-echo-warning">{r.severity}</span>
-            </div>
-            {r.mitigation && <div className="text-[14px] text-echo-text-muted mt-1"><span className="text-echo-text-faint">Mitigation:</span> {r.mitigation}</div>}
-          </div>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function FullMoMTab({ mom }: { mom: MomVersion | null }) {
-  if (!mom) return <EmptyState title="No full MoM stored" body="Generate a MoM first, then the saved markdown will appear here." />;
-  return <div className="text-[14px] text-echo-text leading-relaxed whitespace-pre-wrap">{mom.content_markdown || "No MoM content was stored."}</div>;
-}
-
-function TranscriptTab({ transcript }: { transcript: MeetingDetail["transcript"] }) {
+function TranscriptTab({ transcript, onCopy }: { transcript: MeetingDetail["transcript"]; onCopy: () => void }) {
   const [query, setQuery] = useState("");
   const text = transcript?.text || "";
   const lines = useMemo(() => {
@@ -258,10 +325,10 @@ function TranscriptTab({ transcript }: { transcript: MeetingDetail["transcript"]
     <div>
       <div className="flex items-center gap-2 mb-4">
         <div className="flex-1 relative">
-          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-echo-text-faint" />
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-echo-text-faint" />
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search this transcript..." className="w-full h-10 pl-10 pr-3 rounded-md border border-echo-border bg-echo-surface-2 text-[14px] text-echo-text focus:outline-none focus:bg-echo-surface focus:border-echo-accent" />
         </div>
-        <button disabled className="h-10 px-4 rounded-md bg-echo-text/80 text-echo-surface text-[14px] inline-flex items-center gap-1.5 cursor-not-allowed"><Sparkles size={15} />Regenerate from transcript</button>
+        <button onClick={onCopy} className="h-10 px-4 rounded-md border border-echo-border bg-echo-surface text-[14px] text-echo-text inline-flex items-center gap-1.5 hover:bg-echo-surface-hover"><Copy size={14} />Copy</button>
       </div>
       <div className="rounded-md border border-echo-border bg-echo-surface-2 p-4 max-h-[560px] overflow-auto">
         <ul className="space-y-2">
@@ -274,79 +341,106 @@ function TranscriptTab({ transcript }: { transcript: MeetingDetail["transcript"]
   );
 }
 
-function VersionsTab({ versions }: { versions: MomVersion[] }) {
+function VersionsTab({
+  versions,
+  selectedId,
+  expandedIds,
+  onSelect,
+  onToggle,
+  onView,
+}: {
+  versions: MomVersion[];
+  selectedId: string;
+  expandedIds: string[];
+  onSelect: (id: string) => void;
+  onToggle: (id: string) => void;
+  onView: (id: string) => void;
+}) {
   if (versions.length === 0) return <EmptyState title="No versions" body="No MoM versions are stored for this meeting." />;
   return (
-    <div className="text-[14px] text-echo-text space-y-2">
-      {versions.map((version, index) => (
-        <div key={version.id} className="border border-echo-border rounded-md p-3 bg-echo-surface">
-          <div className="flex items-center justify-between gap-3">
-            <div><span className="text-echo-text">v{version.version_number}{index === 0 ? " (current)" : ""}</span> - {formatDateTime(version.created_at)} - {version.backend_kind || "backend"}</div>
-            <button disabled className="text-[14px] text-echo-text-muted cursor-not-allowed">Compare</button>
+    <div className="space-y-3">
+      {versions.map((version, index) => {
+        const expanded = expandedIds.includes(version.id);
+        return (
+          <div
+            key={version.id}
+            className={`border rounded-md ${selectedId === version.id ? "border-echo-accent bg-echo-accent-bg" : "border-echo-border bg-echo-surface"}`}
+          >
+            <div className="p-4">
+              <div className="flex items-start justify-between gap-3">
+                <button onClick={() => onSelect(version.id)} className="text-left min-w-0">
+                  <div className="text-[15px] text-echo-text" style={{ fontWeight: 650 }}>Version {version.version_number}{index === 0 ? " - current" : ""}</div>
+                  <div className="text-[13px] text-echo-text-muted mt-0.5">{formatDateTimeNullable(version.created_at)}{version.backend_kind ? ` using ${version.backend_kind}` : ""}</div>
+                </button>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button onClick={() => onView(version.id)} className="h-8 px-3 rounded-md border border-echo-border bg-echo-surface text-[13px] text-echo-text hover:bg-echo-surface-hover">
+                    View in MoM
+                  </button>
+                  <button onClick={() => onToggle(version.id)} className="h-8 px-3 rounded-md border border-echo-border bg-echo-surface text-[13px] text-echo-text inline-flex items-center gap-1 hover:bg-echo-surface-hover">
+                    {expanded ? "Collapse" : "Expand"} <ChevronDown size={14} className={expanded ? "rotate-180" : ""} />
+                  </button>
+                </div>
+              </div>
+              {!expanded && <p className="text-[14px] text-echo-text-muted mt-2 line-clamp-2">{markdownSnippet(version.summary || version.content_markdown || "No summary stored.")}</p>}
+            </div>
+            {expanded && (
+              <div className="border-t border-echo-border p-4 bg-echo-surface">
+                <MarkdownMom text={momText(version)} compact />
+              </div>
+            )}
           </div>
-          <p className="text-[14px] text-echo-text-muted mt-1">{version.summary || "No separate summary stored."}</p>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
 
-function ExportsTab() {
+function ExportsTab({ meetingId, mom, onCopy }: { meetingId: string; mom: MomVersion | null; onCopy: () => void }) {
+  if (!mom) return <EmptyState title="No export available" body="Generate a MoM before exporting." />;
   return (
-    <div className="grid grid-cols-2 gap-3 text-[14px]">
-      {[
-        ["PDF", <FileType2 size={13} />],
-        ["DOCX", <FileText size={13} />],
-        ["Email draft", <Mail size={13} />],
-        ["Copy summary", <Copy size={13} />],
-      ].map(([label, icon]) => (
-        <button key={String(label)} disabled className="flex items-center justify-between px-4 py-3 border border-echo-border rounded-md text-left opacity-60 cursor-not-allowed">
-          <div>
-            <div className="text-echo-text">{label}</div>
-            <div className="text-[14px] text-echo-text-muted mt-0.5">Export workflow is not wired yet</div>
-          </div>
-          {icon}
-        </button>
-      ))}
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[14px]">
+      <ExportLink href={meetingExportUrl(meetingId, "pdf")} icon={<FileType2 size={16} />} title="Download PDF" body="Board-ready PDF copy of the current MoM." />
+      <ExportLink href={meetingExportUrl(meetingId, "email")} icon={<Mail size={16} />} title="Email draft" body="Download an .eml draft with the MoM body." />
+      <ExportLink href={meetingExportUrl(meetingId, "text")} icon={<Download size={16} />} title="Download text" body="Plain text copy for editing or archiving." />
+      <button onClick={onCopy} className="flex items-center justify-between px-4 py-3 border border-echo-border rounded-md text-left hover:bg-echo-surface-hover">
+        <div>
+          <div className="text-echo-text" style={{ fontWeight: 600 }}>Copy all MoM</div>
+          <div className="text-[14px] text-echo-text-muted mt-0.5">Copy the selected version to clipboard.</div>
+        </div>
+        <Copy size={16} />
+      </button>
     </div>
   );
 }
 
-function VersionList({ versions }: { versions: MomVersion[] }) {
+function ExportLink({ href, icon, title, body }: { href: string; icon: ReactNode; title: string; body: string }) {
+  return (
+    <a href={href} target="_blank" rel="noreferrer" className="flex items-center justify-between px-4 py-3 border border-echo-border rounded-md text-left hover:bg-echo-surface-hover">
+      <div>
+        <div className="text-echo-text" style={{ fontWeight: 600 }}>{title}</div>
+        <div className="text-[14px] text-echo-text-muted mt-0.5">{body}</div>
+      </div>
+      {icon}
+    </a>
+  );
+}
+
+function VersionList({ versions, selectedId, onSelect }: { versions: MomVersion[]; selectedId: string; onSelect: (id: string) => void }) {
   if (versions.length === 0) return <div className="p-4 text-[14px] text-echo-text-muted">No versions stored.</div>;
   return (
     <ul className="p-2 text-[14px]">
-      {versions.map((v, index) => (
-        <li key={v.id} className={`flex items-center justify-between px-2 py-2 rounded ${index === 0 ? "bg-echo-accent-bg" : "hover:bg-echo-surface-hover"}`}>
-          <div>
-            <div className="text-echo-text">v{v.version_number}{index === 0 && <span className="ml-1.5 text-[12px] text-echo-accent-fg">current</span>}</div>
-            <div className="text-[13px] text-echo-text-muted">{formatDateTime(v.created_at)}</div>
-          </div>
-          <ChevronRight size={13} className="text-echo-text-faint" />
+      {versions.map((version, index) => (
+        <li key={version.id}>
+          <button onClick={() => onSelect(version.id)} className={`w-full flex items-center justify-between px-2 py-2 rounded text-left ${selectedId === version.id ? "bg-echo-accent-bg text-echo-accent-fg" : "hover:bg-echo-surface-hover text-echo-text"}`}>
+            <div>
+              <div>v{version.version_number}{index === 0 && <span className="ml-1.5 text-[12px]">current</span>}</div>
+              <div className="text-[13px] text-echo-text-muted">{formatDateTimeNullable(version.created_at)}</div>
+            </div>
+            <ChevronRight size={13} className="text-echo-text-faint" />
+          </button>
         </li>
       ))}
     </ul>
-  );
-}
-
-function JobLog({ jobs }: { jobs: MeetingDetail["jobs"] }) {
-  if (jobs.length === 0) return <div className="p-4 text-[14px] text-echo-text-muted">No job history stored.</div>;
-  const events = jobs.flatMap((job) => job.events.map((event) => ({ ...event, jobId: job.id })));
-  if (events.length === 0) return <div className="p-4 text-[14px] text-echo-text-muted">No detailed job events stored.</div>;
-  return (
-    <ol className="p-3 space-y-2">
-      {events.map((event, index) => (
-        <li key={`${event.jobId}-${event.created_at}-${index}`} className="flex items-start gap-2 text-[14px]">
-          <span className={`mt-0.5 ${event.level === "error" ? "text-echo-danger" : event.progress >= 100 ? "text-echo-success" : "text-echo-accent"}`}>
-            {event.level === "error" ? <AlertTriangle size={12} /> : event.progress >= 100 ? <CheckCircle2 size={12} /> : <Clock size={12} />}
-          </span>
-          <div className="flex-1">
-            <div className="text-echo-text">{event.message}</div>
-            <div className="text-[13px] text-echo-text-faint">{formatDateTime(event.created_at)} - {event.stage} - {event.progress}%</div>
-          </div>
-        </li>
-      ))}
-    </ol>
   );
 }
 
@@ -361,8 +455,80 @@ function EmptyState({ title, body }: { title: string; body: string }) {
   );
 }
 
-function formatDateTime(value: string) {
+function MarkdownMom({ text, compact = false }: { text: string; compact?: boolean }) {
+  return (
+    <div className={`text-echo-text ${compact ? "text-[14px]" : "text-[15px]"} leading-relaxed`}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          h1: ({ children }) => <h1 className="text-[22px] text-echo-text mt-5 mb-3 leading-snug" style={{ fontWeight: 700 }}>{children}</h1>,
+          h2: ({ children }) => <h2 className="text-[20px] text-echo-text mt-5 mb-3 leading-snug" style={{ fontWeight: 700 }}>{children}</h2>,
+          h3: ({ children }) => <h3 className="text-[18px] text-echo-text mt-4 mb-2 leading-snug" style={{ fontWeight: 700 }}>{children}</h3>,
+          h4: ({ children }) => <h4 className="text-[16px] text-echo-text mt-4 mb-2" style={{ fontWeight: 700 }}>{children}</h4>,
+          p: ({ children }) => <p className="my-2">{children}</p>,
+          strong: ({ children }) => <strong style={{ fontWeight: 700 }}>{children}</strong>,
+          ul: ({ children }) => <ul className="my-3 list-disc pl-6 space-y-1.5">{children}</ul>,
+          ol: ({ children }) => <ol className="my-3 list-decimal pl-6 space-y-1.5">{children}</ol>,
+          li: ({ children }) => <li className="pl-1">{children}</li>,
+          a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer" className="text-echo-accent hover:text-echo-accent-hover underline underline-offset-2">{children}</a>,
+          table: ({ children }) => (
+            <div className="my-4 overflow-x-auto rounded-md border border-echo-border">
+              <table className="w-full border-collapse text-[14px]">{children}</table>
+            </div>
+          ),
+          thead: ({ children }) => <thead className="bg-echo-surface-2 text-echo-text">{children}</thead>,
+          th: ({ children }) => <th className="border-b border-r border-echo-border px-3 py-2 text-left align-top last:border-r-0" style={{ fontWeight: 700 }}>{children}</th>,
+          td: ({ children }) => <td className="border-b border-r border-echo-border px-3 py-2 align-top text-echo-text-muted last:border-r-0">{children}</td>,
+          tr: ({ children }) => <tr className="last:[&_td]:border-b-0">{children}</tr>,
+          blockquote: ({ children }) => <blockquote className="my-4 border-l-2 border-echo-accent pl-4 text-echo-text-muted">{children}</blockquote>,
+          code: ({ children }) => <code className="rounded bg-echo-surface-2 px-1.5 py-0.5 text-[13px] text-echo-text">{children}</code>,
+          pre: ({ children }) => <pre className="my-4 overflow-x-auto rounded-md bg-echo-surface-2 p-4 text-[13px]">{children}</pre>,
+        }}
+      >
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+function momText(mom: MomVersion | null) {
+  return mom?.content_markdown || mom?.summary || "";
+}
+
+function markdownSnippet(value: string) {
+  return value
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/^#+\s*/gm, "")
+    .replace(/^\s*[-*]\s+/gm, "")
+    .replace(/\|/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function templateNames(settings: EchoSettings | null, meetingType?: string): Array<{ value: string; label: string }> {
+  const defaults = settings?.templates?.defaults || [];
+  const names = defaults.map((item: any) => item.name).filter(Boolean);
+  const fallback = meetingType ? [`${meetingType} MoM`, "Executive MoM"] : ["Executive MoM"];
+  return Array.from(new Set([...names, ...fallback])).map((name) => ({ value: name, label: name }));
+}
+
+function backendProfiles(settings: EchoSettings | null, current?: string): Array<{ value: string; label: string }> {
+  const backends = settings?.backends || {};
+  const options = Object.entries(backends)
+    .filter(([, config]: [string, any]) => config?.enabled)
+    .map(([kind, config]: [string, any]) => ({ value: kind, label: config?.name || kind }));
+  if (current && !options.some((option) => option.value === current)) {
+    options.unshift({ value: current, label: current });
+  }
+  return options.length ? options : [{ value: current || "local", label: current || "Local" }];
+}
+
+function formatDateTimeNullable(value?: string | null) {
+  if (!value) return "N/A";
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value || "unknown";
-  return date.toLocaleString(undefined, { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+  if (Number.isNaN(date.getTime())) return value || "N/A";
+  return date.toLocaleString(undefined, { month: "short", day: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 }
