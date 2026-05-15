@@ -64,9 +64,9 @@ export function SettingsPage() {
         title="Settings"
         actions={
           <>
-            {status && <span className="text-[12px] text-echo-text-muted">{status}</span>}
-            <button onClick={reload} className="h-9 px-3 rounded-md border border-echo-border bg-echo-surface hover:bg-echo-surface-hover text-[12px] text-echo-text inline-flex items-center gap-1.5"><RotateCcw size={13} />Reload</button>
-            <button onClick={save} disabled={!draft || saving} className="h-9 px-3 rounded-md bg-echo-accent text-white text-[12px] inline-flex items-center gap-1.5 disabled:opacity-60"><Save size={13} />{saving ? "Saving…" : "Save settings"}</button>
+            {status && <span className="text-[14px] text-echo-text-muted">{status}</span>}
+            <button onClick={reload} className="h-9 px-3 rounded-md border border-echo-border bg-echo-surface hover:bg-echo-surface-hover text-[14px] text-echo-text inline-flex items-center gap-1.5"><RotateCcw size={13} />Reload</button>
+            <button onClick={save} disabled={!draft || saving} className="h-9 px-3 rounded-md bg-echo-accent text-white text-[14px] inline-flex items-center gap-1.5 disabled:opacity-60"><Save size={13} />{saving ? "Saving…" : "Save settings"}</button>
           </>
         }
       />
@@ -77,7 +77,7 @@ export function SettingsPage() {
             const I = s.icon;
             const active = sel === s.id;
             return (
-              <button key={s.id} onClick={() => setSel(s.id)} className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-[12px] ${active ? "bg-echo-accent-bg text-echo-accent-fg" : "text-echo-text hover:bg-echo-surface-hover"}`}>
+              <button key={s.id} onClick={() => setSel(s.id)} className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-[14px] ${active ? "bg-echo-accent-bg text-echo-accent-fg" : "text-echo-text hover:bg-echo-surface-hover"}`}>
                 <I size={14} className={active ? "text-echo-accent" : "text-echo-text-muted"} />
                 <span className="flex-1 text-left">{s.label}</span>
               </button>
@@ -103,7 +103,7 @@ function Panel({ title, desc, children }: { title: string; desc?: string; childr
     <div className="bg-echo-surface border border-echo-border rounded-lg">
       <div className="px-5 py-3 border-b border-echo-border">
         <h2 className="text-[14px] text-echo-text" style={{ fontWeight: 600 }}>{title}</h2>
-        {desc && <p className="text-[12px] text-echo-text-muted mt-0.5">{desc}</p>}
+        {desc && <p className="text-[14px] text-echo-text-muted mt-0.5">{desc}</p>}
       </div>
       <div className="p-5 space-y-4">{children}</div>
     </div>
@@ -113,15 +113,15 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
   return (
     <div className="grid grid-cols-[200px_1fr] gap-4 items-start">
       <div>
-        <div className="text-[12px] text-echo-text">{label}</div>
-        {hint && <div className="text-[11px] text-echo-text-muted mt-0.5">{hint}</div>}
+        <div className="text-[14px] text-echo-text">{label}</div>
+        {hint && <div className="text-[14px] text-echo-text-muted mt-0.5">{hint}</div>}
       </div>
       <div>{children}</div>
     </div>
   );
 }
 function Input({ value, type = "text", onChange }: { value: string; type?: string; onChange?: (value: string) => void }) {
-  return <input type={type} value={value} onChange={(event) => onChange?.(event.target.value)} className="w-full max-w-md h-9 px-3 rounded-md border border-echo-border bg-echo-surface-2 text-[12px] text-echo-text focus:outline-none focus:bg-echo-surface focus:border-echo-accent" />;
+  return <input type={type} value={value} onChange={(event) => onChange?.(event.target.value)} className="w-full max-w-md h-9 px-3 rounded-md border border-echo-border bg-echo-surface-2 text-[14px] text-echo-text focus:outline-none focus:bg-echo-surface focus:border-echo-accent" />;
 }
 function Toggle({ on = false, label, onChange }: { on?: boolean; label: string; onChange?: (value: boolean) => void }) {
   return (
@@ -129,14 +129,14 @@ function Toggle({ on = false, label, onChange }: { on?: boolean; label: string; 
       <button onClick={() => onChange?.(!on)} className={`h-5 w-9 rounded-full transition-colors relative ${on ? "bg-echo-accent" : "bg-echo-border-strong"}`}>
         <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${on ? "left-4" : "left-0.5"}`} />
       </button>
-      <span className="text-[12px] text-echo-text-muted">{label}</span>
+      <span className="text-[14px] text-echo-text-muted">{label}</span>
     </label>
   );
 }
 
 function Select({ value, options, onChange }: { value: string; options: string[]; onChange: (value: string) => void }) {
   return (
-    <select value={value} onChange={(event) => onChange(event.target.value)} className="w-full max-w-md h-9 px-3 rounded-md border border-echo-border bg-echo-surface-2 text-[12px] text-echo-text focus:outline-none focus:bg-echo-surface focus:border-echo-accent">
+    <select value={value} onChange={(event) => onChange(event.target.value)} className="w-full max-w-md h-9 px-3 rounded-md border border-echo-border bg-echo-surface-2 text-[14px] text-echo-text focus:outline-none focus:bg-echo-surface focus:border-echo-accent">
       {options.map((option) => <option key={option} value={option}>{option}</option>)}
     </select>
   );
@@ -237,24 +237,24 @@ function HealthPanel({ settings }: { settings: EchoSettings | null }) {
     <Panel title="System Health">
       <div className="mb-4 grid grid-cols-2 gap-4">
         <div className="p-3 rounded-md bg-echo-surface-2 border border-echo-border">
-          <div className="text-[10px] text-echo-text-faint uppercase tracking-wider mb-1">Operating System</div>
-          <div className="text-[12.5px] text-echo-text font-medium">{health?.os || "Detecting..."}</div>
+          <div className="text-[14px] text-echo-text-faint uppercase tracking-wider mb-1">Operating System</div>
+          <div className="text-[14px] text-echo-text font-medium">{health?.os || "Detecting..."}</div>
         </div>
         <div className="p-3 rounded-md bg-echo-surface-2 border border-echo-border">
-          <div className="text-[10px] text-echo-text-faint uppercase tracking-wider mb-1">Backend Version</div>
-          <div className="text-[12.5px] text-echo-text font-medium">v{health?.version || "0.0.0"} · healthy</div>
+          <div className="text-[14px] text-echo-text-faint uppercase tracking-wider mb-1">Backend Version</div>
+          <div className="text-[14px] text-echo-text font-medium">v{health?.version || "0.0.0"} · healthy</div>
         </div>
       </div>
 
       <div className="flex items-center justify-between mb-3">
-        <div className="text-[12px] text-echo-text-muted">
+        <div className="text-[14px] text-echo-text-muted">
           Status: {loading ? "Checking..." : health ? "Operational" : "Unknown"} 
           {lastChecked && ` (last checked ${lastChecked.toLocaleTimeString()})`}
         </div>
         <button 
           onClick={refresh}
           disabled={loading}
-          className="h-8 px-3 rounded-md border border-echo-border bg-echo-surface hover:bg-echo-surface-hover text-[11px] text-echo-text disabled:opacity-50"
+          className="h-8 px-3 rounded-md border border-echo-border bg-echo-surface hover:bg-echo-surface-hover text-[14px] text-echo-text disabled:opacity-50"
         >
           {loading ? "Checking..." : "Refresh diagnostics"}
         </button>
@@ -265,8 +265,8 @@ function HealthPanel({ settings }: { settings: EchoSettings | null }) {
             <CheckCircle2 size={15} className={c.ok ? "text-echo-success" : "text-echo-danger"} />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
-                <span className="text-[12.5px] text-echo-text" style={{ fontWeight: 500 }}>{c.l}</span>
-                <span className="text-[11px] text-echo-text-muted">({c.reason})</span>
+                <span className="text-[14px] text-echo-text" style={{ fontWeight: 500 }}>{c.l}</span>
+                <span className="text-[14px] text-echo-text-muted">({c.reason})</span>
                 <Tooltip>
                    <TooltipTrigger asChild>
                      <button className="p-0.5 rounded-full hover:bg-echo-surface-2 transition-colors">
@@ -278,7 +278,7 @@ function HealthPanel({ settings }: { settings: EchoSettings | null }) {
                    </TooltipContent>
                 </Tooltip>
               </div>
-              <div className="text-[11.5px] text-echo-text-muted mt-0.5">{c.v}</div>
+              <div className="text-[14px] text-echo-text-muted mt-0.5">{c.v}</div>
             </div>
           </li>
         ))}
@@ -298,7 +298,7 @@ function BackendPanel({ settings, update }: { settings: EchoSettings | null; upd
             ["azure", "Azure OpenAI"],
             ["local", "Local Ollama"],
           ].map(([id, label]) => (
-            <button key={id} onClick={() => update(["summary", "default_backend"], id)} className={`px-3 py-1.5 rounded text-[12px] ${primary === id ? "bg-echo-surface text-echo-text shadow-sm" : "text-echo-text-muted"}`}>{label}</button>
+            <button key={id} onClick={() => update(["summary", "default_backend"], id)} className={`px-3 py-1.5 rounded text-[14px] ${primary === id ? "bg-echo-surface text-echo-text shadow-sm" : "text-echo-text-muted"}`}>{label}</button>
           ))}
         </div>
       </Row>
@@ -312,7 +312,7 @@ function BackendPanel({ settings, update }: { settings: EchoSettings | null; upd
       <Row label="Azure OpenAI API key" hint="Stored encrypted at rest.">
         <div className="flex items-center gap-2">
           <Input value={settings?.backends?.azure?.api_key || ""} type="password" onChange={(value) => update(["backends", "azure", "api_key"], value)} />
-          <button className="text-[11px] text-echo-accent inline-flex items-center gap-1"><KeyRound size={11} />Reveal</button>
+          <button className="text-[14px] text-echo-accent inline-flex items-center gap-1"><KeyRound size={11} />Reveal</button>
         </div>
       </Row>
       <Row label="Azure API version"><Input value={settings?.backends?.azure?.api_version || "2024-02-15-preview"} onChange={(value) => update(["backends", "azure", "api_version"], value)} /></Row>
@@ -366,7 +366,7 @@ function ASRPanel({ settings, update }: { settings: EchoSettings | null; update:
           disabled={!isHF}
           value={String(settings?.asr?.chunk_length_s || 30)}
           onChange={(event) => update(["asr", "chunk_length_s"], Number(event.target.value || 0))}
-          className={`w-full max-w-md h-9 px-3 rounded-md border border-echo-border bg-echo-surface-2 text-[12px] text-echo-text focus:outline-none ${!isHF ? "opacity-40 grayscale pointer-events-none" : "focus:bg-echo-surface focus:border-echo-accent"}`}
+          className={`w-full max-w-md h-9 px-3 rounded-md border border-echo-border bg-echo-surface-2 text-[14px] text-echo-text focus:outline-none ${!isHF ? "opacity-40 grayscale pointer-events-none" : "focus:bg-echo-surface focus:border-echo-accent"}`}
         />
       </Row>
 
@@ -379,7 +379,7 @@ function ASRPanel({ settings, update }: { settings: EchoSettings | null; update:
           disabled={!isHF}
           value={String(settings?.asr?.stride_length_s || 5)}
           onChange={(event) => update(["asr", "stride_length_s"], Number(event.target.value || 0))}
-          className={`w-full max-w-md h-9 px-3 rounded-md border border-echo-border bg-echo-surface-2 text-[12px] text-echo-text focus:outline-none ${!isHF ? "opacity-40 grayscale pointer-events-none" : "focus:bg-echo-surface focus:border-echo-accent"}`}
+          className={`w-full max-w-md h-9 px-3 rounded-md border border-echo-border bg-echo-surface-2 text-[14px] text-echo-text focus:outline-none ${!isHF ? "opacity-40 grayscale pointer-events-none" : "focus:bg-echo-surface focus:border-echo-accent"}`}
         />
       </Row>
     </Panel>

@@ -77,8 +77,8 @@ export function ActivityDrawer({ open, onClose }: { open: boolean; onClose: () =
       <aside className={`fixed right-0 top-0 bottom-0 z-50 w-[420px] bg-echo-surface border-l border-echo-border shadow-2xl flex flex-col transition-transform ${open ? "translate-x-0" : "translate-x-full"}`}>
         <div className="h-[60px] px-5 flex items-center justify-between border-b border-echo-border">
           <div>
-            <div className="text-[13px] text-echo-text" style={{ fontWeight: 600 }}>Activity</div>
-            <div className="text-[10px] text-echo-text-faint mt-0.5">{jobs.length} active jobs from local database</div>
+            <div className="text-[17px] text-echo-text" style={{ fontWeight: 700 }}>Activity</div>
+            <div className="text-[13px] text-echo-text-faint mt-0.5">{jobs.length} active jobs from local database</div>
           </div>
           <button onClick={onClose} className="h-8 w-8 grid place-items-center rounded-md text-echo-text-muted hover:bg-echo-surface-hover"><X size={15} /></button>
         </div>
@@ -87,25 +87,25 @@ export function ActivityDrawer({ open, onClose }: { open: boolean; onClose: () =
           <button
             disabled={busy || queuedCount === 0}
             onClick={handleStartAll}
-            className="h-7 px-2.5 rounded-md border border-echo-border bg-echo-surface text-[11px] text-echo-text inline-flex items-center gap-1.5 hover:bg-echo-surface-hover disabled:opacity-50 disabled:cursor-not-allowed"
+            className="h-9 px-3 rounded-md border border-echo-border bg-echo-surface text-[14px] text-echo-text inline-flex items-center gap-1.5 hover:bg-echo-surface-hover disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Play size={11} />Start all
+            <Play size={13} />Start all
           </button>
-          <button disabled className="h-7 px-2.5 rounded-md border border-echo-border bg-echo-surface text-[11px] text-echo-text-muted inline-flex items-center gap-1.5 cursor-not-allowed"><Pause size={11} />Pause</button>
+          <button disabled className="h-9 px-3 rounded-md border border-echo-border bg-echo-surface text-[14px] text-echo-text-muted inline-flex items-center gap-1.5 cursor-not-allowed"><Pause size={13} />Pause</button>
           <button
             disabled={busy || failedCount === 0}
             onClick={handleRetryFailed}
-            className="h-7 px-2.5 rounded-md border border-echo-border bg-echo-surface text-[11px] text-echo-text inline-flex items-center gap-1.5 hover:bg-echo-surface-hover disabled:opacity-50 disabled:cursor-not-allowed"
+            className="h-9 px-3 rounded-md border border-echo-border bg-echo-surface text-[14px] text-echo-text inline-flex items-center gap-1.5 hover:bg-echo-surface-hover disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <RefreshCcw size={11} />Retry failed
+            <RefreshCcw size={13} />Retry failed
           </button>
-          {message && <span className="ml-auto text-[11px] text-echo-text-muted truncate">{message}</span>}
+          {message && <span className="ml-auto text-[14px] text-echo-text-muted truncate">{message}</span>}
         </div>
 
         {failed && (
           <div className="bg-amber-500/[0.08] border-b border-echo-border px-5 py-3 flex items-start gap-3">
             <div className="h-7 w-7 rounded-md bg-echo-surface border border-echo-border grid place-items-center text-echo-warning shrink-0"><AlertTriangle size={13} /></div>
-            <div className="flex-1 text-[12px]">
+            <div className="flex-1 text-[14px]">
               <div className="text-echo-text" style={{ fontWeight: 500 }}>{failed.title}</div>
               <div className="text-echo-text-muted mt-0.5">{failed.errorMessage || failed.status}</div>
             </div>
@@ -114,27 +114,27 @@ export function ActivityDrawer({ open, onClose }: { open: boolean; onClose: () =
 
         <ul className="flex-1 overflow-y-auto divide-y divide-echo-border">
           {jobs.length === 0 && (
-            <li className="px-5 py-10 text-center text-[12px] text-echo-text-muted">
+            <li className="px-5 py-10 text-center text-[14px] text-echo-text-muted">
               No active jobs. Start a meeting from Home to see live activity here.
             </li>
           )}
           {jobs.map((j) => {
             const Icon = j.icon;
             return (
-              <li key={j.id} className="px-5 py-3 hover:bg-echo-surface-hover">
+              <li key={j.id} className="px-5 py-4 hover:bg-echo-surface-hover">
                 <div className="flex items-start gap-3">
-                  <div className="h-7 w-7 rounded-md bg-echo-surface-2 grid place-items-center text-echo-text-muted shrink-0"><Icon size={13} /></div>
+                  <div className="h-8 w-8 rounded-md bg-echo-surface-2 grid place-items-center text-echo-text-muted shrink-0"><Icon size={15} /></div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-[12.5px] text-echo-text truncate">{j.title}</div>
-                    <div className="text-[10.5px] text-echo-text-muted mt-0.5">{j.status} - updated {j.updated}</div>
+                    <div className="text-[15px] text-echo-text truncate" style={{ fontWeight: 600 }}>{j.title}</div>
+                    <div className="text-[13px] text-echo-text-muted mt-0.5">{j.status} - updated {j.updated}</div>
                     <div className="mt-1.5 flex items-center gap-2">
                       <div className="flex-1 h-1 rounded-full bg-echo-surface-2 overflow-hidden">
                         <div className={`h-full ${toneBar[j.tone]}`} style={{ width: `${j.progress}%` }} />
                       </div>
-                      <span className="text-[10px] text-echo-text-faint w-7 text-right">{j.progress}%</span>
+                      <span className="text-[13px] text-echo-text-faint w-7 text-right">{j.progress}%</span>
                     </div>
                     {j.events.length > 0 && (
-                      <div className="mt-2 text-[10.5px] text-echo-text-muted truncate">
+                      <div className="mt-2 text-[13px] text-echo-text-muted truncate">
                         {j.events[j.events.length - 1].message}
                       </div>
                     )}

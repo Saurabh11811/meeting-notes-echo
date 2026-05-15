@@ -33,8 +33,8 @@ export function EchoLogoLockup() {
     <div className="flex items-center gap-2.5">
       <EchoLogoMark size={24} />
       <div className="flex flex-col leading-none">
-        <span className="tracking-[0.18em] text-[14px] text-echo-text" style={{ fontWeight: 600 }}>ECHO</span>
-        <span className="text-[9.5px] text-echo-text-faint mt-0.5 tracking-wide">Executive Calls, Highlights & Outcomes</span>
+        <span className="tracking-[0.18em] text-[15px] text-echo-text" style={{ fontWeight: 600 }}>ECHO</span>
+        <span className="text-[11px] text-echo-text-faint mt-0.5 tracking-wide">Executive Calls, Highlights & Outcomes</span>
       </div>
     </div>
   );

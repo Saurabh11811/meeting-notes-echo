@@ -209,10 +209,10 @@ function CreateBlock({ onCreated }: { onCreated: () => Promise<void> }) {
     <section className="bg-echo-surface border border-echo-border rounded-lg shadow-[var(--echo-shadow)]">
       <div className="px-6 pt-5 pb-4 flex items-start justify-between gap-4 border-b border-echo-border">
         <div>
-          <h2 className="text-[16px] text-echo-text" style={{ fontWeight: 600 }}>Create meeting notes</h2>
-          <p className="text-[12px] text-echo-text-muted mt-1">Paste a meeting link, upload a recording, or reuse a transcript.</p>
+          <h2 className="text-[20px] text-echo-text" style={{ fontWeight: 700 }}>Create meeting notes</h2>
+          <p className="text-[15px] text-echo-text-muted mt-1.5">Paste a meeting link, upload a recording, or reuse a transcript.</p>
         </div>
-        <label className="flex items-center gap-2 text-[12px] text-echo-text-muted cursor-pointer select-none">
+        <label className="flex items-center gap-2 text-[14px] text-echo-text-muted cursor-pointer select-none">
           <span>Bulk mode</span>
           <button onClick={() => setBulk(!bulk)} className={`h-5 w-9 rounded-full transition-colors relative ${bulk ? "bg-echo-accent" : "bg-echo-border-strong"}`}>
             <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${bulk ? "left-4" : "left-0.5"}`} />
@@ -226,8 +226,8 @@ function CreateBlock({ onCreated }: { onCreated: () => Promise<void> }) {
             const Icon = t.icon;
             const isActive = active === t.id;
             return (
-              <button key={t.id} onClick={() => setActive(t.id)} className={`flex items-center gap-2 px-3 py-1.5 rounded text-[12px] transition-colors ${isActive ? "bg-echo-surface text-echo-text shadow-sm" : "text-echo-text-muted hover:text-echo-text"}`}>
-                <Icon size={13} />{t.label}
+              <button key={t.id} onClick={() => setActive(t.id)} className={`flex items-center gap-2 px-3.5 py-2 rounded-md text-[14px] transition-colors ${isActive ? "bg-echo-surface text-echo-text shadow-sm" : "text-echo-text-muted hover:text-echo-text"}`}>
+                <Icon size={15} />{t.label}
               </button>
             );
           })}
@@ -240,7 +240,7 @@ function CreateBlock({ onCreated }: { onCreated: () => Promise<void> }) {
             value={linkText}
             onChange={(event) => setLinkText(event.target.value)}
             placeholder={bulk ? "Paste multiple meeting links, one per line…" : "Paste a meeting link…"}
-            className="w-full h-24 p-3 rounded-md border border-echo-border bg-echo-surface-2 text-[13px] font-mono text-echo-text placeholder:text-echo-text-faint focus:outline-none focus:bg-echo-surface focus:border-echo-accent"
+            className="w-full min-h-32 p-4 rounded-md border border-echo-border bg-echo-surface-2 text-[15px] font-mono text-echo-text placeholder:text-echo-text-faint focus:outline-none focus:bg-echo-surface focus:border-echo-accent"
           />
         )}
 
@@ -254,17 +254,17 @@ function CreateBlock({ onCreated }: { onCreated: () => Promise<void> }) {
                 className="hidden"
                 onChange={(event) => handleFiles(event.target.files)}
               />
-              <div className="mx-auto h-9 w-9 rounded-full bg-echo-surface border border-echo-border grid place-items-center mb-2"><Upload size={14} className="text-echo-accent" /></div>
-              <div className="text-[13px] text-echo-text">Drop {bulk ? "multiple " : ""}audio or video files</div>
-              <div className="text-[11px] text-echo-text-muted mt-1">MP4, MP3, M4A, WAV, MOV{bulk ? " · multiple supported" : ""}</div>
+              <div className="mx-auto h-10 w-10 rounded-full bg-echo-surface border border-echo-border grid place-items-center mb-3"><Upload size={16} className="text-echo-accent" /></div>
+              <div className="text-[16px] text-echo-text" style={{ fontWeight: 650 }}>Drop {bulk ? "multiple " : ""}audio or video files</div>
+              <div className="text-[14px] text-echo-text-muted mt-1">MP4, MP3, M4A, WAV, MOV{bulk ? " · multiple supported" : ""}</div>
             </label>
             {files.length > 0 && (
               <ul className="mt-3 space-y-1.5">
                 {files.map((f, i) => (
-                  <li key={i} className="flex items-center gap-2 px-3 py-2 rounded-md border border-echo-border bg-echo-surface-2 text-[12px]">
+                  <li key={i} className="flex items-center gap-2 px-3 py-2 rounded-md border border-echo-border bg-echo-surface-2 text-[14px]">
                     <FileText size={12} className="text-echo-text-muted" />
                     <span className="flex-1 truncate text-echo-text">{f.name}</span>
-                    <span className="text-[10px] text-echo-text-faint">Ready</span>
+                    <span className="text-[14px] text-echo-text-faint">Ready</span>
                     <button onClick={() => setFiles(files.filter((_, idx) => idx !== i))} className="text-echo-text-faint hover:text-echo-danger"><X size={12} /></button>
                   </li>
                 ))}
@@ -279,9 +279,9 @@ function CreateBlock({ onCreated }: { onCreated: () => Promise<void> }) {
               value={transcriptText}
               onChange={(event) => setTranscriptText(event.target.value)}
               placeholder="Paste transcript text…"
-              className="w-full h-24 p-3 rounded-md border border-echo-border bg-echo-surface-2 text-[13px] text-echo-text placeholder:text-echo-text-faint focus:outline-none focus:bg-echo-surface focus:border-echo-accent"
+              className="w-full min-h-32 p-4 rounded-md border border-echo-border bg-echo-surface-2 text-[15px] text-echo-text placeholder:text-echo-text-faint focus:outline-none focus:bg-echo-surface focus:border-echo-accent"
             />
-            <label className="mt-3 flex items-center justify-center gap-2 h-10 rounded-md border border-dashed border-echo-border bg-echo-surface-2 text-[12px] text-echo-text-muted hover:border-echo-accent hover:text-echo-text cursor-pointer">
+            <label className="mt-3 flex items-center justify-center gap-2 h-11 rounded-md border border-dashed border-echo-border bg-echo-surface-2 text-[14px] text-echo-text-muted hover:border-echo-accent hover:text-echo-text cursor-pointer">
               <input
                 type="file"
                 multiple={bulk}
@@ -295,10 +295,10 @@ function CreateBlock({ onCreated }: { onCreated: () => Promise<void> }) {
             {transcriptFiles.length > 0 && (
               <ul className="mt-3 space-y-1.5">
                 {transcriptFiles.map((f, i) => (
-                  <li key={`${f.name}-${i}`} className="flex items-center gap-2 px-3 py-2 rounded-md border border-echo-border bg-echo-surface-2 text-[12px]">
+                  <li key={`${f.name}-${i}`} className="flex items-center gap-2 px-3 py-2 rounded-md border border-echo-border bg-echo-surface-2 text-[14px]">
                     <FileText size={12} className="text-echo-text-muted" />
                     <span className="flex-1 truncate text-echo-text">{f.name}</span>
-                    <span className="text-[10px] text-echo-text-faint">Ready</span>
+                    <span className="text-[14px] text-echo-text-faint">Ready</span>
                     <button onClick={() => setTranscriptFiles(transcriptFiles.filter((_, idx) => idx !== i))} className="text-echo-text-faint hover:text-echo-danger"><X size={12} /></button>
                   </li>
                 ))}
@@ -308,19 +308,19 @@ function CreateBlock({ onCreated }: { onCreated: () => Promise<void> }) {
         )}
       </div>
 
-      <div className="px-6 py-3 border-t border-echo-border bg-echo-surface-2/50 rounded-b-lg flex items-center gap-3 flex-wrap">
+      <div className="px-6 py-4 border-t border-echo-border bg-echo-surface-2/50 rounded-b-lg flex items-center gap-3 flex-wrap">
         <OptionSelect label="Type" value={meetingType} options={["Executive", "Project Review", "Client Call", "Townhall", "Demo/UAT", "Incident"]} onChange={setMeetingType} />
 
         <div className="w-full flex items-center gap-2 pt-1">
-          <button disabled={submitting} onClick={() => submit(true)} className="inline-flex items-center gap-2 h-9 px-4 rounded-md bg-echo-accent hover:bg-echo-accent-hover text-white text-[13px] shadow-sm disabled:opacity-60" style={{ color: "#fff" }}>
-            <Sparkles size={14} />
+          <button disabled={submitting} onClick={() => submit(true)} className="inline-flex items-center gap-2 h-10 px-4 rounded-md bg-echo-accent hover:bg-echo-accent-hover text-white text-[14px] shadow-sm disabled:opacity-60" style={{ color: "#fff" }}>
+            <Sparkles size={16} />
             {submitting ? "Adding…" : bulk ? "Start all immediately" : "Start immediately"}
           </button>
-          <button disabled={submitting} onClick={() => submit(false)} className="inline-flex items-center gap-2 h-9 px-3 rounded-md border border-echo-border bg-echo-surface text-echo-text text-[13px] hover:bg-echo-surface-hover disabled:opacity-60">
-            <Plus size={14} />
+          <button disabled={submitting} onClick={() => submit(false)} className="inline-flex items-center gap-2 h-10 px-4 rounded-md border border-echo-border bg-echo-surface text-echo-text text-[14px] hover:bg-echo-surface-hover disabled:opacity-60">
+            <Plus size={16} />
             Start later
           </button>
-          {message && <span className="text-[12px] text-echo-text-muted ml-auto">{message}</span>}
+          {message && <span className="text-[14px] text-echo-text-muted ml-auto">{message}</span>}
         </div>
       </div>
     </section>
@@ -329,7 +329,7 @@ function CreateBlock({ onCreated }: { onCreated: () => Promise<void> }) {
 
 function OptionSelect({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (value: string) => void }) {
   return (
-    <label className="flex items-center gap-2 h-8 px-2.5 rounded-md border border-echo-border bg-echo-surface hover:border-echo-border-strong text-[12px]">
+    <label className="flex items-center gap-2 h-10 px-3 rounded-md border border-echo-border bg-echo-surface hover:border-echo-border-strong text-[14px]">
       <span className="text-echo-text-muted">{label}:</span>
       <select value={value} onChange={(event) => onChange(event.target.value)} className="bg-transparent text-echo-text focus:outline-none">
         {options.map((option) => <option key={option} value={option}>{option}</option>)}
@@ -380,14 +380,14 @@ function QueueCard({
         <button
           disabled={busy || queuedCount === 0}
           onClick={onStartAll}
-          className="h-7 px-2.5 rounded-md border border-echo-border bg-echo-surface text-[11px] text-echo-text inline-flex items-center gap-1.5 hover:bg-echo-surface-hover disabled:opacity-50 disabled:cursor-not-allowed"
+          className="h-9 px-3 rounded-md border border-echo-border bg-echo-surface text-[14px] text-echo-text inline-flex items-center gap-1.5 hover:bg-echo-surface-hover disabled:opacity-50 disabled:cursor-not-allowed"
         >
           <Play size={11} />Start all
         </button>
-        {message && <span className="text-[11px] text-echo-text-muted truncate">{message}</span>}
+        {message && <span className="text-[14px] text-echo-text-muted truncate">{message}</span>}
       </div>
       {jobs.length === 0 ? (
-        <div className="px-5 py-8 text-center text-[12px] text-echo-text-muted">
+        <div className="px-5 py-8 text-center text-[14px] text-echo-text-muted">
           No queued jobs. Paste a meeting link or transcript above to start.
         </div>
       ) : (
@@ -395,16 +395,16 @@ function QueueCard({
           {jobs.map((j) => {
           const Icon = j.icon;
           return (
-            <li key={j.id} className="px-5 py-3 hover:bg-echo-surface-hover">
+            <li key={j.id} className="px-5 py-4 hover:bg-echo-surface-hover">
               <details>
                 <summary className="list-none cursor-pointer">
                   <div className="flex items-center gap-3">
-                    <div className="h-7 w-7 rounded-md bg-echo-surface-2 grid place-items-center text-echo-text-muted shrink-0"><Icon size={13} /></div>
+                    <div className="h-8 w-8 rounded-md bg-echo-surface-2 grid place-items-center text-echo-text-muted shrink-0"><Icon size={15} /></div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-[12.5px] text-echo-text truncate">{j.title}</div>
-                      <div className={`text-[10.5px] mt-0.5 ${toneText[j.tone]}`}>{j.status}</div>
+                      <div className="text-[15px] text-echo-text truncate" style={{ fontWeight: 600 }}>{j.title}</div>
+                      <div className={`text-[13px] mt-0.5 ${toneText[j.tone]}`}>{j.status}</div>
                     </div>
-                    <div className="w-12 text-right text-[10px] text-echo-text-faint">{j.progress}%</div>
+                    <div className="w-12 text-right text-[14px] text-echo-text-faint">{j.progress}%</div>
                     {j.jobStatus === "queued" && (
                       <button
                         disabled={busy}
@@ -413,7 +413,7 @@ function QueueCard({
                           event.stopPropagation();
                           onStartJob(j.id);
                         }}
-                        className="h-7 px-2 rounded-md border border-echo-border bg-echo-surface text-[11px] text-echo-text inline-flex items-center gap-1 hover:bg-echo-surface-hover disabled:opacity-50"
+                        className="h-8 px-3 rounded-md border border-echo-border bg-echo-surface text-[14px] text-echo-text inline-flex items-center gap-1 hover:bg-echo-surface-hover disabled:opacity-50"
                       >
                         <Play size={11} />Start
                       </button>
@@ -425,25 +425,25 @@ function QueueCard({
                   </div>
                 </summary>
                 <div className="ml-10 mt-3 rounded-md border border-echo-border bg-echo-surface-2 p-3">
-                  <div className="grid grid-cols-2 gap-2 text-[11px] text-echo-text-muted mb-3">
+                  <div className="grid grid-cols-2 gap-2 text-[14px] text-echo-text-muted mb-3">
                     <div>Source: <span className="text-echo-text">{j.sourceType}</span></div>
                     <div>Template: <span className="text-echo-text">{j.templateName || "Default"}</span></div>
                     <div>Updated: <span className="text-echo-text">{formatTime(j.updatedAt)}</span></div>
                     <div>Status: <span className={toneText[j.tone]}>{j.jobStatus}</span></div>
                   </div>
-                  {j.errorMessage && <div className="mb-3 text-[11.5px] text-echo-danger">{j.errorMessage}</div>}
+                  {j.errorMessage && <div className="mb-3 text-[14px] text-echo-danger">{j.errorMessage}</div>}
                   {j.events.length === 0 ? (
-                    <div className="text-[11.5px] text-echo-text-muted">Waiting for worker activity.</div>
+                    <div className="text-[14px] text-echo-text-muted">Waiting for worker activity.</div>
                   ) : (
                     <ol className="space-y-2">
                       {j.events.map((event, index) => (
-                        <li key={`${event.created_at}-${index}`} className="flex items-start gap-2 text-[11.5px]">
+                        <li key={`${event.created_at}-${index}`} className="flex items-start gap-2 text-[14px]">
                           <span className={`mt-0.5 ${event.level === "error" ? "text-echo-danger" : event.progress >= 100 ? "text-echo-success" : "text-echo-accent"}`}>
                             {event.level === "error" ? <AlertTriangle size={12} /> : event.progress >= 100 ? <CheckCircle2 size={12} /> : <Clock size={12} />}
                           </span>
                           <div className="flex-1">
                             <div className="text-echo-text">{event.message}</div>
-                            <div className="text-[10px] text-echo-text-faint">{formatTime(event.created_at)} · {event.stage} · {event.progress}%</div>
+                            <div className="text-[14px] text-echo-text-faint">{formatTime(event.created_at)} · {event.stage} · {event.progress}%</div>
                           </div>
                         </li>
                       ))}
@@ -473,30 +473,30 @@ function RecentCard({ className = "", rows, onOpen, onViewAll }: { className?: s
   return (
     <section className={`bg-echo-surface border border-echo-border rounded-lg overflow-hidden ${className}`}>
       <SectionHeader title="Recent meeting notes" subtitle="Last 7 days" action="View all" onAction={onViewAll} />
-      <table className="w-full text-[12px]">
+      <table className="w-full text-[14px]">
         <thead className="bg-echo-surface-2 text-echo-text-muted">
           <tr>
-            <th className="text-left px-5 py-2.5" style={{ fontWeight: 500 }}>Meeting</th>
-            <th className="text-left px-3 py-2.5" style={{ fontWeight: 500 }}>Date</th>
-            <th className="text-left px-3 py-2.5" style={{ fontWeight: 500 }}>Type</th>
-            <th className="text-left px-5 py-2.5" style={{ fontWeight: 500 }}>Status</th>
+            <th className="text-left px-5 py-3" style={{ fontWeight: 650 }}>Meeting</th>
+            <th className="text-left px-3 py-3" style={{ fontWeight: 650 }}>Date</th>
+            <th className="text-left px-3 py-3" style={{ fontWeight: 650 }}>Type</th>
+            <th className="text-left px-5 py-3" style={{ fontWeight: 650 }}>Status</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-echo-border">
           {rows.length === 0 && (
             <tr>
-              <td colSpan={4} className="px-5 py-10 text-center text-[12px] text-echo-text-muted">
+              <td colSpan={4} className="px-5 py-10 text-center text-[14px] text-echo-text-muted">
                 No meeting notes in the database yet.
               </td>
             </tr>
           )}
           {rows.map((n) => (
             <tr key={n.id} onClick={() => onOpen(n.id)} className="hover:bg-echo-surface-hover cursor-pointer">
-              <td className="px-5 py-2.5 text-echo-text">{n.title}</td>
-              <td className="px-3 py-2.5 text-echo-text-muted">{n.date}</td>
-              <td className="px-3 py-2.5"><span className="px-1.5 py-0.5 rounded bg-echo-surface-2 text-echo-text-muted text-[11px]">{n.type}</span></td>
-              <td className="px-5 py-2.5">
-                <span className="inline-flex items-center gap-1.5 text-[11px] text-echo-text">
+              <td className="px-5 py-3.5 text-echo-text" style={{ fontWeight: 500 }}>{n.title}</td>
+              <td className="px-3 py-3.5 text-echo-text-muted">{n.date}</td>
+              <td className="px-3 py-3.5"><span className="px-2 py-1 rounded bg-echo-surface-2 text-echo-text-muted text-[13px]">{n.type}</span></td>
+              <td className="px-5 py-3.5">
+                <span className="inline-flex items-center gap-1.5 text-[14px] text-echo-text">
                   <span className={`h-1.5 w-1.5 rounded-full ${toneBar[n.tone]}`} />
                   {n.status}
                 </span>
@@ -527,12 +527,12 @@ function displayMeetingStatus(status: string) {
 
 function SectionHeader({ title, subtitle, action, onAction }: { title: string; subtitle?: string; action?: string; onAction?: () => void }) {
   return (
-    <div className="px-5 py-3 flex items-center justify-between border-b border-echo-border">
+    <div className="px-5 py-4 flex items-center justify-between border-b border-echo-border">
       <div className="flex items-baseline gap-2">
-        <h3 className="text-[13px] text-echo-text" style={{ fontWeight: 600 }}>{title}</h3>
-        {subtitle && <span className="text-[11px] text-echo-text-muted">{subtitle}</span>}
+        <h3 className="text-[16px] text-echo-text" style={{ fontWeight: 700 }}>{title}</h3>
+        {subtitle && <span className="text-[14px] text-echo-text-muted">{subtitle}</span>}
       </div>
-      {action && <button onClick={onAction} className="text-[11.5px] text-echo-accent hover:text-echo-accent-hover">{action} →</button>}
+      {action && <button onClick={onAction} className="text-[14px] text-echo-accent hover:text-echo-accent-hover">{action} →</button>}
     </div>
   );
 }

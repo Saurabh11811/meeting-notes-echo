@@ -106,8 +106,8 @@ export function EchoLogoLockup() {
     <div className="flex items-center gap-2.5">
       <EchoLogoMark size={28} />
       <div className="flex flex-col leading-none">
-        <span className="tracking-[0.22em] text-[14px] text-echo-text" style={{ fontWeight: 700 }}>ECHO</span>
-        <span className="text-[9px] text-echo-text-faint mt-0.5 tracking-[0.08em] uppercase">Calls · Highlights · Outcomes</span>
+        <span className="tracking-[0.22em] text-[15px] text-echo-text" style={{ fontWeight: 700 }}>ECHO</span>
+        <span className="text-[11px] text-echo-text-faint mt-0.5 tracking-[0.08em] uppercase">Calls · Highlights · Outcomes</span>
       </div>
     </div>
   );
@@ -120,7 +120,7 @@ export function EchoLogoHero() {
       <EchoLogoMark size={56} />
       <div className="flex flex-col leading-none">
         <span className="tracking-[0.24em] text-[28px] text-echo-text" style={{ fontWeight: 700 }}>ECHO</span>
-        <span className="text-[10px] text-echo-text-muted mt-1 tracking-[0.12em] uppercase">Executive Calls, Highlights & Outcomes</span>
+        <span className="text-[13px] text-echo-text-muted mt-1 tracking-[0.12em] uppercase">Executive Calls, Highlights & Outcomes</span>
       </div>
     </div>
   );

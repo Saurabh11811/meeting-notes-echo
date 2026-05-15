@@ -1,18 +1,20 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --font-size: 14px;
+  --font-size: 16px;
+  --font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", monospace;
 
   /* ECHO semantic tokens — light */
-  --echo-bg: #f7f8fa;
+  --echo-bg: #f8f9fa;
   --echo-surface: #ffffff;
-  --echo-surface-2: #f1f4f8;
-  --echo-surface-hover: #f5f7fa;
-  --echo-border: #e4e7ec;
-  --echo-border-strong: #d0d5dd;
-  --echo-text: #0f172a;
-  --echo-text-muted: #5b6573;
-  --echo-text-faint: #98a2b3;
+  --echo-surface-2: #f1f3f5;
+  --echo-surface-hover: #eef2f6;
+  --echo-border: rgba(15, 23, 42, 0.1);
+  --echo-border-strong: rgba(15, 23, 42, 0.18);
+  --echo-text: #111318;
+  --echo-text-muted: #4b5563;
+  --echo-text-faint: #6b7280;
   --echo-accent: #0f766e;
   --echo-accent-hover: #115e59;
   --echo-accent-bg: #ecfdf5;
@@ -22,7 +24,7 @@
   --echo-warning: #d97706;
   --echo-danger: #e11d48;
   --echo-info: #2563eb;
-  --echo-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --echo-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
 
   /* shadcn-mapped (kept for ui/* components) */
   --background: var(--echo-bg);
@@ -60,15 +62,15 @@
 }
 
 .dark {
-  --echo-bg: #0a0f1a;
-  --echo-surface: #111827;
-  --echo-surface-2: #0f172a;
-  --echo-surface-hover: #1e293b;
-  --echo-border: #1f2937;
-  --echo-border-strong: #334155;
-  --echo-text: #e5e7eb;
-  --echo-text-muted: #94a3b8;
-  --echo-text-faint: #64748b;
+  --echo-bg: #0f1115;
+  --echo-surface: #1a1d23;
+  --echo-surface-2: #252830;
+  --echo-surface-hover: #2b2f38;
+  --echo-border: rgba(255, 255, 255, 0.08);
+  --echo-border-strong: rgba(255, 255, 255, 0.14);
+  --echo-text: #f1f3f5;
+  --echo-text-muted: #aeb6c2;
+  --echo-text-faint: #7f8997;
   --echo-accent: #2dd4bf;
   --echo-accent-hover: #5eead4;
   --echo-accent-bg: rgba(45, 212, 191, 0.12);
@@ -78,13 +80,15 @@
   --echo-warning: #fbbf24;
   --echo-danger: #fb7185;
   --echo-info: #60a5fa;
-  --echo-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --echo-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
 
   --primary-foreground: #042f2e;
   --destructive-foreground: #fff1f2;
 }
 
 @theme inline {
+  --font-family-sans: var(--font-family);
+  --font-family-mono: var(--font-mono);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -139,10 +143,74 @@
   body {
     background: var(--echo-bg);
     color: var(--echo-text);
-    font-feature-settings: "cv11", "ss01";
+    font-family: var(--font-family);
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    letter-spacing: 0;
   }
 
   html {
     font-size: var(--font-size);
+  }
+
+  h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1.2;
+    letter-spacing: 0;
+  }
+
+  h2 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1.25;
+    letter-spacing: 0;
+  }
+
+  h3 {
+    font-size: 1.125rem;
+    font-weight: 650;
+    line-height: 1.35;
+    letter-spacing: 0;
+  }
+
+  h4 {
+    font-size: 1rem;
+    font-weight: 650;
+    line-height: 1.5;
+    letter-spacing: 0;
+  }
+
+  label,
+  button,
+  input,
+  textarea,
+  select {
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+
+  button,
+  label {
+    font-weight: 600;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(107, 114, 128, 0.55);
+    border-radius: 999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(75, 85, 99, 0.75);
   }
 }

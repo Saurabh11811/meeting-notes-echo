@@ -24,11 +24,11 @@ export function EchoSidebar({ current, onNavigate }: { current: PageId; onNaviga
             <button
               key={item.id}
               onClick={() => onNavigate(item.id)}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-[13px] transition-colors ${
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-[14px] transition-colors ${
                 active ? "bg-echo-accent-bg text-echo-accent-fg" : "text-echo-text-muted hover:bg-echo-surface-hover hover:text-echo-text"
               }`}
             >
-              <Icon size={15} className={active ? "text-echo-accent" : ""} />
+              <Icon size={16} className={active ? "text-echo-accent" : ""} />
               <span className="flex-1 text-left">{item.label}</span>
             </button>
           );
@@ -37,11 +37,11 @@ export function EchoSidebar({ current, onNavigate }: { current: PageId; onNaviga
 
       <div className="px-3 py-4 border-t border-echo-border">
         <div className="px-3">
-          <div className="flex items-center gap-2 text-[12px] text-echo-text mb-2">
-            <Info size={14} className="text-echo-accent" />
+          <div className="flex items-center gap-2 text-[15px] text-echo-text mb-2">
+            <Info size={16} className="text-echo-accent" />
             <span style={{ fontWeight: 600 }}>About ECHO</span>
           </div>
-          <p className="text-[11px] text-echo-text-muted leading-relaxed">
+          <p className="text-[14px] text-echo-text-muted leading-relaxed">
             ECHO is an AI-powered assistant that converts your meeting recordings and transcripts into professional, board-ready minutes.
           </p>
         </div>
