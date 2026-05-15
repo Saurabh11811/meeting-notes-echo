@@ -89,7 +89,7 @@ export function MeetingDetailPage({ meetingId, onBack }: { meetingId: string | n
     if (!detail) return null;
     return detail.mom_versions.find((version) => version.id === selectedVersionId) || detail.latest_mom;
   }, [detail, selectedVersionId]);
-  const templateOptions = useMemo(() => templateNames(templates, meeting?.meeting_type, templateName), [templates, meeting?.meeting_type, templateName]);
+  const templateOptions = useMemo(() => templateNames(templates, templateName), [templates, templateName]);
   const backendOptions = useMemo(() => backendProfiles(settings, selectedMom?.backend_kind), [settings, selectedMom?.backend_kind]);
 
   const handleViewVersion = (versionId: string) => {
@@ -552,12 +552,15 @@ function htmlDocumentFragment(innerHtml: string) {
   `;
 }
 
-function templateNames(templates: EchoTemplate[], meetingType?: string, current?: string): Array<{ value: string; label: string }> {
-  const matching = meetingType ? templates.filter((template) => template.meeting_type === meetingType) : [];
-  const ordered = matching.length ? matching : templates;
-  const names = ordered.map((template) => template.name).filter(Boolean);
-  if (current && !names.includes(current)) names.unshift(current);
-  return names.map((name) => ({ value: name, label: name }));
+function templateNames(templates: EchoTemplate[], current?: string): Array<{ value: string; label: string }> {
+  const options = templates.map((template) => ({
+    value: template.name,
+    label: `${template.name} · ${template.meeting_type}${template.is_default ? " (default)" : ""}`,
+  }));
+  if (current && !options.some((option) => option.value === current)) {
+    options.unshift({ value: current, label: current });
+  }
+  return options;
 }
 
 function backendProfiles(settings: EchoSettings | null, current?: string): Array<{ value: string; label: string }> {
