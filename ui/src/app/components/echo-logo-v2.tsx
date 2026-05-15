@@ -105,9 +105,11 @@ export function EchoLogoLockup() {
   return (
     <div className="flex items-center gap-2.5">
       <EchoLogoMark size={28} />
-      <div className="flex flex-col leading-none">
+      <div className="flex flex-col leading-none min-w-0">
         <span className="tracking-[0.22em] text-[15px] text-echo-text" style={{ fontWeight: 700 }}>ECHO</span>
-        <span className="text-[11px] text-echo-text-faint mt-0.5 tracking-[0.08em] uppercase">Calls · Highlights · Outcomes</span>
+        <span className="text-[10px] text-echo-text-faint mt-0.5 leading-[1.15] tracking-[0.05em] uppercase">
+          Executive Calls,<br />Highlights & Outcomes
+        </span>
       </div>
     </div>
   );

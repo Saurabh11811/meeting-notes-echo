@@ -52,6 +52,7 @@ def export_meeting(meeting_id: str, export_type: str) -> FileResponse:
     media_type = {
         "pdf": "application/pdf",
         "email": "message/rfc822",
+        "html": "text/html",
         "text": "text/plain",
     }.get(export_type, "application/octet-stream")
     return FileResponse(path, media_type=media_type, filename=path.name)

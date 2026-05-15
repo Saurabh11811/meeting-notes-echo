@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -105,6 +105,24 @@ export function MeetingDetailPage({ meetingId, onBack }: { meetingId: string | n
     setMessage(label);
   };
 
+  const handleCopyRich = async (text: string, html: string, label = "Copied") => {
+    if (!text.trim()) {
+      setMessage("Nothing to copy.");
+      return;
+    }
+    if (html.trim() && "ClipboardItem" in window) {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "text/html": new Blob([htmlDocumentFragment(html)], { type: "text/html" }),
+          "text/plain": new Blob([text], { type: "text/plain" }),
+        }),
+      ]);
+    } else {
+      await navigator.clipboard.writeText(text);
+    }
+    setMessage(label);
+  };
+
   const handleRegenerate = async () => {
     if (!meetingId) return;
     setRegenerating(true);
@@ -184,7 +202,7 @@ export function MeetingDetailPage({ meetingId, onBack }: { meetingId: string | n
           </div>
 
           <section className="bg-echo-surface border border-echo-border rounded-lg p-6 min-h-[420px]">
-            {tab === "MoM" && <MomTab mom={selectedMom} onCopy={() => handleCopy(momText(selectedMom), "MoM copied.")} />}
+            {tab === "MoM" && <MomTab mom={selectedMom} onCopy={handleCopyRich} />}
             {tab === "Transcript" && <TranscriptTab transcript={detail.transcript} onCopy={() => handleCopy(detail.transcript?.text || "", "Transcript copied.")} />}
             {tab === "Versions" && (
               <VersionsTab
@@ -196,7 +214,7 @@ export function MeetingDetailPage({ meetingId, onBack }: { meetingId: string | n
                 onView={handleViewVersion}
               />
             )}
-            {tab === "Exports" && <ExportsTab meetingId={meetingId} mom={selectedMom} onCopy={() => handleCopy(momText(selectedMom), "Full MoM copied.")} />}
+            {tab === "Exports" && <ExportsTab meetingId={meetingId} mom={selectedMom} onCopy={handleCopyRich} />}
           </section>
         </div>
 
@@ -290,8 +308,9 @@ function SelectField({ label, value, options, onChange }: { label: string; value
   );
 }
 
-function MomTab({ mom, onCopy }: { mom: MomVersion | null; onCopy: () => void }) {
+function MomTab({ mom, onCopy }: { mom: MomVersion | null; onCopy: (text: string, html: string, label?: string) => void }) {
   const text = momText(mom);
+  const renderedRef = useRef<HTMLElement | null>(null);
   if (!mom) return <EmptyState title="No MoM generated yet" body="This meeting has no saved MoM version." />;
   return (
     <div>
@@ -300,11 +319,11 @@ function MomTab({ mom, onCopy }: { mom: MomVersion | null; onCopy: () => void })
           <h2 className="text-[18px] text-echo-text" style={{ fontWeight: 700 }}>MoM v{mom.version_number}</h2>
           <p className="text-[13px] text-echo-text-muted mt-0.5">Generated {formatDateTimeNullable(mom.created_at)}{mom.backend_kind ? ` using ${mom.backend_kind}` : ""}</p>
         </div>
-        <button onClick={onCopy} className="h-9 px-3 rounded-md border border-echo-border bg-echo-surface text-[14px] text-echo-text inline-flex items-center gap-1.5 hover:bg-echo-surface-hover">
+        <button onClick={() => onCopy(text, renderedRef.current?.innerHTML || "", "MoM copied with formatting.")} className="h-9 px-3 rounded-md border border-echo-border bg-echo-surface text-[14px] text-echo-text inline-flex items-center gap-1.5 hover:bg-echo-surface-hover">
           <Copy size={14} />Copy MoM
         </button>
       </div>
-      <article>{text ? <MarkdownMom text={text} /> : <p className="text-[15px] text-echo-text">No MoM content was stored.</p>}</article>
+      <article ref={renderedRef}>{text ? <MarkdownMom text={text} /> : <p className="text-[15px] text-echo-text">No MoM content was stored.</p>}</article>
     </div>
   );
 }
@@ -361,15 +380,17 @@ function VersionsTab({
     <div className="space-y-3">
       {versions.map((version, index) => {
         const expanded = expandedIds.includes(version.id);
+        const isCurrent = index === 0;
+        const isSelected = selectedId === version.id;
         return (
           <div
             key={version.id}
-            className={`border rounded-md ${selectedId === version.id ? "border-echo-accent bg-echo-accent-bg" : "border-echo-border bg-echo-surface"}`}
+            className={`border rounded-md ${isCurrent ? "border-echo-accent bg-echo-accent-bg" : isSelected ? "border-echo-border-strong bg-echo-surface-2" : "border-echo-border bg-echo-surface"}`}
           >
             <div className="p-4">
               <div className="flex items-start justify-between gap-3">
                 <button onClick={() => onSelect(version.id)} className="text-left min-w-0">
-                  <div className="text-[15px] text-echo-text" style={{ fontWeight: 650 }}>Version {version.version_number}{index === 0 ? " - current" : ""}</div>
+                  <div className="text-[15px] text-echo-text" style={{ fontWeight: 650 }}>Version {version.version_number}{isCurrent ? " - current" : ""}</div>
                   <div className="text-[13px] text-echo-text-muted mt-0.5">{formatDateTimeNullable(version.created_at)}{version.backend_kind ? ` using ${version.backend_kind}` : ""}</div>
                 </button>
                 <div className="flex items-center gap-2 shrink-0">
@@ -395,21 +416,27 @@ function VersionsTab({
   );
 }
 
-function ExportsTab({ meetingId, mom, onCopy }: { meetingId: string; mom: MomVersion | null; onCopy: () => void }) {
+function ExportsTab({ meetingId, mom, onCopy }: { meetingId: string; mom: MomVersion | null; onCopy: (text: string, html: string, label?: string) => void }) {
+  const renderedRef = useRef<HTMLDivElement | null>(null);
+  const text = momText(mom);
   if (!mom) return <EmptyState title="No export available" body="Generate a MoM before exporting." />;
   return (
+    <>
+    <div ref={renderedRef} className="hidden"><MarkdownMom text={text} /></div>
     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[14px]">
-      <ExportLink href={meetingExportUrl(meetingId, "pdf")} icon={<FileType2 size={16} />} title="Download PDF" body="Board-ready PDF copy of the current MoM." />
-      <ExportLink href={meetingExportUrl(meetingId, "email")} icon={<Mail size={16} />} title="Email draft" body="Download an .eml draft with the MoM body." />
-      <ExportLink href={meetingExportUrl(meetingId, "text")} icon={<Download size={16} />} title="Download text" body="Plain text copy for editing or archiving." />
-      <button onClick={onCopy} className="flex items-center justify-between px-4 py-3 border border-echo-border rounded-md text-left hover:bg-echo-surface-hover">
+      <ExportLink href={meetingExportUrl(meetingId, "pdf")} icon={<FileType2 size={16} />} title="Download PDF" body="Readable PDF copy with cleaned notes." />
+      <ExportLink href={meetingExportUrl(meetingId, "html")} icon={<Download size={16} />} title="Open rendered HTML" body="Rendered headings, tables, and lists in a browser." />
+      <ExportLink href={meetingExportUrl(meetingId, "email")} icon={<Mail size={16} />} title="Email draft" body="Download a formatted .eml draft with HTML and text." />
+      <ExportLink href={meetingExportUrl(meetingId, "text")} icon={<Download size={16} />} title="Download text" body="Clean plain text copy for editing or archiving." />
+      <button onClick={() => onCopy(text, renderedRef.current?.innerHTML || "", "Full MoM copied with formatting.")} className="flex items-center justify-between px-4 py-3 border border-echo-border rounded-md text-left hover:bg-echo-surface-hover">
         <div>
           <div className="text-echo-text" style={{ fontWeight: 600 }}>Copy all MoM</div>
-          <div className="text-[14px] text-echo-text-muted mt-0.5">Copy the selected version to clipboard.</div>
+          <div className="text-[14px] text-echo-text-muted mt-0.5">Copy selected version with rich formatting when supported.</div>
         </div>
         <Copy size={16} />
       </button>
     </div>
+    </>
   );
 }
 
@@ -431,7 +458,7 @@ function VersionList({ versions, selectedId, onSelect }: { versions: MomVersion[
     <ul className="p-2 text-[14px]">
       {versions.map((version, index) => (
         <li key={version.id}>
-          <button onClick={() => onSelect(version.id)} className={`w-full flex items-center justify-between px-2 py-2 rounded text-left ${selectedId === version.id ? "bg-echo-accent-bg text-echo-accent-fg" : "hover:bg-echo-surface-hover text-echo-text"}`}>
+          <button onClick={() => onSelect(version.id)} className={`w-full flex items-center justify-between px-2 py-2 rounded text-left ${index === 0 ? "bg-echo-accent-bg text-echo-accent-fg" : selectedId === version.id ? "bg-echo-surface-2 text-echo-text" : "hover:bg-echo-surface-hover text-echo-text"}`}>
             <div>
               <div>v{version.version_number}{index === 0 && <span className="ml-1.5 text-[12px]">current</span>}</div>
               <div className="text-[13px] text-echo-text-muted">{formatDateTimeNullable(version.created_at)}</div>
@@ -506,6 +533,14 @@ function markdownSnippet(value: string) {
     .replace(/\|/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function htmlDocumentFragment(innerHtml: string) {
+  return `
+    <div style="font-family: Inter, Arial, sans-serif; color: #111318; line-height: 1.55;">
+      ${innerHtml}
+    </div>
+  `;
 }
 
 function templateNames(settings: EchoSettings | null, meetingType?: string): Array<{ value: string; label: string }> {

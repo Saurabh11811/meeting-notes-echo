@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from html import escape
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -242,13 +243,17 @@ def create_mom_export(meeting_id: str, export_type: str) -> Path:
         path = export_dir / f"{stem}.eml"
         path.write_text(email_draft(title, content), encoding="utf-8")
         return path
+    if export_type == "html":
+        path = export_dir / f"{stem}.html"
+        path.write_text(render_html_document(title, content), encoding="utf-8")
+        return path
     if export_type == "text":
         path = export_dir / f"{stem}.txt"
-        path.write_text(content, encoding="utf-8")
+        path.write_text(markdown_to_plain_text(content), encoding="utf-8")
         return path
     if export_type == "pdf":
         path = export_dir / f"{stem}.pdf"
-        write_simple_pdf(path, title, content)
+        write_simple_pdf(path, title, markdown_to_plain_text(content))
         return path
     raise ValueError("Unsupported export type.")
 
@@ -305,13 +310,126 @@ def safe_filename(value: str) -> str:
 
 
 def email_draft(title: str, content: str) -> str:
+    boundary = f"echo-{safe_filename(title)[:32] or 'mom'}"
+    plain = markdown_to_plain_text(content)
+    html = render_html_body(content)
     return (
         f"Subject: Meeting notes - {title}\n"
+        "MIME-Version: 1.0\n"
+        f"Content-Type: multipart/alternative; boundary=\"{boundary}\"\n\n"
+        f"--{boundary}\n"
         "Content-Type: text/plain; charset=utf-8\n\n"
-        "Hi,\n\n"
-        "Please find the meeting notes below.\n\n"
-        f"{content}\n"
+        "Hi,\n\nPlease find the meeting notes below.\n\n"
+        f"{plain}\n\n"
+        f"--{boundary}\n"
+        "Content-Type: text/html; charset=utf-8\n\n"
+        "<p>Hi,</p><p>Please find the meeting notes below.</p>"
+        f"{html}\n"
+        f"--{boundary}--\n"
     )
+
+
+def render_html_document(title: str, content: str) -> str:
+    return (
+        "<!doctype html><html><head><meta charset=\"utf-8\">"
+        f"<title>{escape(title)}</title>"
+        "<style>"
+        "body{font-family:Inter,Arial,sans-serif;line-height:1.55;color:#111318;max-width:920px;margin:40px auto;padding:0 24px;background:#fff;}"
+        "h1,h2,h3,h4{line-height:1.25;margin:24px 0 12px;}p{margin:8px 0;}ul,ol{padding-left:24px;}li{margin:4px 0;}"
+        "table{border-collapse:collapse;width:100%;margin:18px 0;font-size:14px;}th,td{border:1px solid #d0d5dd;padding:8px 10px;text-align:left;vertical-align:top;}th{background:#f1f3f5;font-weight:700;}"
+        "blockquote{border-left:3px solid #0f766e;margin:16px 0;padding-left:14px;color:#4b5563;}code{background:#f1f3f5;padding:2px 5px;border-radius:4px;}"
+        "</style></head><body>"
+        f"<h1>{escape(title)}</h1>"
+        f"{render_html_body(content)}"
+        "</body></html>"
+    )
+
+
+def render_html_body(content: str) -> str:
+    lines = content.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    html: list[str] = []
+    paragraph: list[str] = []
+    list_items: list[str] = []
+    table_lines: list[str] = []
+
+    def flush_paragraph() -> None:
+        if paragraph:
+            html.append(f"<p>{format_inline(' '.join(paragraph))}</p>")
+            paragraph.clear()
+
+    def flush_list() -> None:
+        if list_items:
+            html.append("<ul>" + "".join(f"<li>{format_inline(item)}</li>" for item in list_items) + "</ul>")
+            list_items.clear()
+
+    def flush_table() -> None:
+        if not table_lines:
+            return
+        rows = [parse_markdown_table_row(row) for row in table_lines if not re.match(r"^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$", row)]
+        if rows:
+            head, body = rows[0], rows[1:]
+            html.append("<table><thead><tr>" + "".join(f"<th>{format_inline(cell)}</th>" for cell in head) + "</tr></thead><tbody>")
+            for row in body:
+                html.append("<tr>" + "".join(f"<td>{format_inline(cell)}</td>" for cell in row) + "</tr>")
+            html.append("</tbody></table>")
+        table_lines.clear()
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line:
+            flush_paragraph()
+            flush_list()
+            flush_table()
+            continue
+        if line.startswith("|"):
+            flush_paragraph()
+            flush_list()
+            table_lines.append(line)
+            continue
+        flush_table()
+        if line.startswith("### "):
+            flush_paragraph()
+            flush_list()
+            html.append(f"<h3>{format_inline(line[4:])}</h3>")
+        elif line.startswith("## "):
+            flush_paragraph()
+            flush_list()
+            html.append(f"<h2>{format_inline(line[3:])}</h2>")
+        elif line.startswith("# "):
+            flush_paragraph()
+            flush_list()
+            html.append(f"<h1>{format_inline(line[2:])}</h1>")
+        elif line.startswith(("- ", "* ")):
+            flush_paragraph()
+            list_items.append(line[2:].strip())
+        else:
+            paragraph.append(line)
+    flush_paragraph()
+    flush_list()
+    flush_table()
+    return "\n".join(html)
+
+
+def parse_markdown_table_row(row: str) -> list[str]:
+    return [cell.strip() for cell in row.strip().strip("|").split("|")]
+
+
+def format_inline(value: str) -> str:
+    escaped = escape(value)
+    escaped = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", escaped)
+    escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
+    return escaped
+
+
+def markdown_to_plain_text(content: str) -> str:
+    value = content.replace("\r\n", "\n").replace("\r", "\n")
+    value = re.sub(r"```[\s\S]*?```", "", value)
+    value = re.sub(r"`([^`]+)`", r"\1", value)
+    value = re.sub(r"\*\*([^*]+)\*\*", r"\1", value)
+    value = re.sub(r"__([^_]+)__", r"\1", value)
+    value = re.sub(r"^#+\s*", "", value, flags=re.MULTILINE)
+    value = re.sub(r"^\s*[-*]\s+", "- ", value, flags=re.MULTILINE)
+    return value.strip() + "\n"
 
 
 def write_simple_pdf(path: Path, title: str, content: str) -> None:

@@ -238,7 +238,7 @@ export function regenerateMeeting(meetingId: string, payload: RegenerateMeetingR
   );
 }
 
-export function meetingExportUrl(meetingId: string, exportType: "pdf" | "email" | "text") {
+export function meetingExportUrl(meetingId: string, exportType: "pdf" | "email" | "text" | "html") {
   return `${API_BASE}/meetings/${encodeURIComponent(meetingId)}/exports/${exportType}`;
 }
 
