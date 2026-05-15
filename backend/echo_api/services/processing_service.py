@@ -4,6 +4,8 @@ import json
 import logging
 import re
 import sys
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,7 +26,17 @@ import helpers_local  # noqa: E402
 import prompts  # noqa: E402
 
 
-_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="echo-worker")
+def configured_max_workers() -> int:
+    try:
+        config = load_app_config()
+        return max(1, int(config.get("processing", {}).get("max_concurrent_jobs", 1)))
+    except Exception:
+        return 1
+
+
+_EXECUTOR = ThreadPoolExecutor(max_workers=configured_max_workers(), thread_name_prefix="echo-worker")
+_COORDINATOR_STARTED = False
+_COORDINATOR_LOCK = threading.Lock()
 log = logging.getLogger("echo.worker")
 if not log.handlers:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
@@ -35,12 +47,127 @@ def submit_job(job_id: str) -> None:
     _EXECUTOR.submit(process_job, job_id)
 
 
+def start_job(job_id: str) -> dict | None:
+    scheduled = schedule_job(job_id)
+    if not scheduled:
+        return None
+    submit_job(job_id)
+    return scheduled
+
+
+def start_all_jobs(*, auto_only: bool = False) -> list[dict]:
+    return start_jobs(queued_job_ids(auto_only=auto_only))
+
+
+def start_jobs(job_ids: list[str]) -> list[dict]:
+    started: list[dict] = []
+    for job_id in job_ids:
+        job = start_job(job_id)
+        if job:
+            started.append(job)
+    return started
+
+
+def process_next_job() -> dict | None:
+    job_id = next_queued_job_id()
+    if not job_id:
+        return None
+    return start_job(job_id)
+
+
+def process_available_jobs() -> list[dict]:
+    return start_all_jobs()
+
+
+def retry_failed_jobs() -> list[dict]:
+    now = now_iso()
+    with db_session() as conn:
+        rows = conn.execute("SELECT id, meeting_id FROM queue_jobs WHERE status = 'failed' ORDER BY updated_at ASC").fetchall()
+        if not rows:
+            return []
+        conn.execute(
+            """
+            UPDATE queue_jobs
+            SET status = 'queued', stage = 'Waiting', progress = 0,
+                error_code = '', error_message = '', updated_at = ?
+            WHERE status = 'failed'
+            """,
+            (now,),
+        )
+        for row in rows:
+            if row["meeting_id"]:
+                conn.execute(
+                    "UPDATE meetings SET status = 'Queued', updated_at = ? WHERE id = ?",
+                    (now, row["meeting_id"]),
+                )
+    for row in rows:
+        log_event(row["id"], "Waiting", 0, "Failed job returned to the queue for retry.", "warning")
+    return start_jobs([row["id"] for row in rows])
+
+
+def start_queue_coordinator() -> None:
+    config = load_app_config()
+    queue_config = config.get("queue", {})
+    if not bool(queue_config.get("auto_process", True)):
+        return
+
+    global _COORDINATOR_STARTED
+    with _COORDINATOR_LOCK:
+        if _COORDINATOR_STARTED:
+            return
+        _COORDINATOR_STARTED = True
+
+    interval = max(2, int(queue_config.get("process_interval_seconds", 10)))
+
+    def run() -> None:
+        log.info("Queue coordinator started; checking every %s seconds", interval)
+        while True:
+            try:
+                start_all_jobs(auto_only=True)
+            except Exception:
+                log.exception("Queue coordinator failed while checking queued jobs")
+            time.sleep(interval)
+
+    threading.Thread(target=run, name="echo-queue-coordinator", daemon=True).start()
+
+
+def recover_interrupted_jobs() -> int:
+    now = now_iso()
+    with db_session() as conn:
+        rows = conn.execute("SELECT id, meeting_id FROM queue_jobs WHERE status IN ('running', 'scheduled')").fetchall()
+        if not rows:
+            return 0
+        conn.execute(
+            """
+            UPDATE queue_jobs
+            SET status = 'queued', stage = 'Waiting', updated_at = ?
+            WHERE status IN ('running', 'scheduled')
+            """,
+            (now,),
+        )
+        for row in rows:
+            if row["meeting_id"]:
+                conn.execute(
+                    "UPDATE meetings SET status = 'Queued', updated_at = ? WHERE id = ?",
+                    (now, row["meeting_id"]),
+                )
+    for row in rows:
+        log_event(row["id"], "Waiting", 0, "Job was returned to the queue after a backend restart.", "warning")
+    log.info("Recovered %s interrupted running job(s)", len(rows))
+    return len(rows)
+
+
 def process_job(job_id: str) -> None:
     try:
         job = get_job(job_id)
         if not job:
             log.warning("Job %s not found; skipping", job_id)
             return
+        if job.get("status") in ("queued", "scheduled"):
+            job = claim_job(job_id)
+            if not job:
+                log.info("Job %s could not be claimed; skipping", job_id)
+                return
         log_event(job_id, job.get("stage", "Queued"), int(job.get("progress", 0)), "Worker picked up the job.")
         source_payload = json.loads(job["source_payload_json"] or "{}")
         source_type = job["source_type"]
@@ -60,6 +187,107 @@ def process_job(job_id: str) -> None:
     except Exception as exc:
         log.exception("Job %s failed with unhandled error", job_id)
         fail_job(job_id, "PROCESSING_ERROR", str(exc))
+
+
+def schedule_job(job_id: str) -> dict | None:
+    now = now_iso()
+    with db_session() as conn:
+        row = conn.execute(
+            """
+            SELECT id, meeting_id, source_type, stage, progress, status, created_at, updated_at,
+                   json_extract(source_payload_json, '$.title') AS title
+            FROM queue_jobs
+            WHERE id = ? AND status = 'queued'
+            """,
+            (job_id,),
+        ).fetchone()
+        if not row:
+            return None
+        updated = conn.execute(
+            """
+            UPDATE queue_jobs
+            SET status = 'scheduled', stage = 'Waiting for worker', updated_at = ?
+            WHERE id = ? AND status = 'queued'
+            """,
+            (now, job_id),
+        )
+        if updated.rowcount != 1:
+            return None
+        if row["meeting_id"]:
+            conn.execute(
+                "UPDATE meetings SET status = 'Waiting for worker', updated_at = ? WHERE id = ?",
+                (now, row["meeting_id"]),
+            )
+    log_event(job_id, "Waiting for worker", int(row["progress"] or 0), "Job scheduled for processing.")
+    scheduled = dict(row)
+    scheduled["status"] = "scheduled"
+    scheduled["stage"] = "Waiting for worker"
+    scheduled["updated_at"] = now
+    return scheduled
+
+
+def claim_job(job_id: str) -> dict | None:
+    now = now_iso()
+    with db_session() as conn:
+        row = conn.execute(
+            """
+            SELECT q.*, m.title
+            FROM queue_jobs q
+            LEFT JOIN meetings m ON m.id = q.meeting_id
+            WHERE q.id = ? AND q.status IN ('queued', 'scheduled')
+            """,
+            (job_id,),
+        ).fetchone()
+        if not row:
+            return None
+        updated = conn.execute(
+            """
+            UPDATE queue_jobs
+            SET status = 'running', stage = 'Waiting for worker', updated_at = ?
+            WHERE id = ? AND status IN ('queued', 'scheduled')
+            """,
+            (now, job_id),
+        )
+        if updated.rowcount != 1:
+            return None
+        if row["meeting_id"]:
+            conn.execute(
+                "UPDATE meetings SET status = 'Waiting for worker', updated_at = ? WHERE id = ?",
+                (now, row["meeting_id"]),
+            )
+    log_event(job_id, "Waiting for worker", int(row["progress"] or 0), "Job claimed for processing.")
+    claimed = dict(row)
+    claimed["status"] = "running"
+    claimed["stage"] = "Waiting for worker"
+    claimed["updated_at"] = now
+    return claimed
+
+
+def next_queued_job_id(*, auto_only: bool = False) -> str | None:
+    ids = queued_job_ids(auto_only=auto_only, limit=1)
+    return ids[0] if ids else None
+
+
+def queued_job_ids(*, auto_only: bool = False, limit: int | None = None) -> list[str]:
+    auto_filter = "AND COALESCE(json_extract(source_payload_json, '$.auto_start'), 0) = 1" if auto_only else ""
+    limit_clause = f"LIMIT {int(limit)}" if limit else ""
+    with db_session() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT id
+            FROM queue_jobs
+            WHERE status = 'queued'
+              {auto_filter}
+            ORDER BY created_at ASC
+            {limit_clause}
+            """
+        ).fetchall()
+        return [row["id"] for row in rows]
+
+
+def running_job_count() -> int:
+    with db_session() as conn:
+        return int(conn.execute("SELECT COUNT(*) FROM queue_jobs WHERE status = 'running'").fetchone()[0])
 
 
 def process_url_job(job: dict, source_payload: dict) -> None:

@@ -5,6 +5,7 @@ export type HomeSummary = {
     meetings_processed: number;
     pending_review: number;
     queue_running: number;
+    queue_waiting: number;
     action_items_open: number;
   };
   active_jobs: Array<{
@@ -146,8 +147,8 @@ export type JobCreateRequest = {
   source_type: "url" | "upload" | "transcript";
   sources: string[];
   meeting_type: string;
-  template_name: string;
-  confidentiality: string;
+  template_name?: string;
+  confidentiality?: string;
   project?: string;
   host?: string;
   run_now?: boolean;
@@ -171,6 +172,24 @@ async function send<T>(path: string, method: "POST" | "PUT", body: unknown): Pro
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    let detail = `${response.status}: ${response.statusText}`;
+    try {
+      const data = await response.json();
+      detail = data.detail || detail;
+    } catch {
+      // Keep HTTP status fallback.
+    }
+    throw new Error(detail);
+  }
+  return response.json() as Promise<T>;
+}
+
+async function command<T>(path: string): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: { Accept: "application/json" },
   });
   if (!response.ok) {
     let detail = `${response.status}: ${response.statusText}`;
@@ -213,12 +232,28 @@ export function createJobs(payload: JobCreateRequest) {
   return send<{ jobs: Array<Record<string, unknown>> }>("/jobs", "POST", payload);
 }
 
+export function startJob(jobId: string) {
+  return command<{ job: Record<string, unknown> }>(`/jobs/${encodeURIComponent(jobId)}/start`);
+}
+
+export function processNextJob() {
+  return command<{ started: Record<string, unknown> | null; message: string }>("/jobs/process-next");
+}
+
+export function processAvailableJobs() {
+  return command<{ started: Array<Record<string, unknown>>; message: string }>("/jobs/process-available");
+}
+
+export function retryFailedJobs() {
+  return command<{ started: Array<Record<string, unknown>>; message: string }>("/jobs/retry-failed");
+}
+
 export async function createUploadJobs(payload: Omit<JobCreateRequest, "source_type" | "sources"> & { files: File[] }) {
   const form = new FormData();
   payload.files.forEach((file) => form.append("files", file));
   form.append("meeting_type", payload.meeting_type);
-  form.append("template_name", payload.template_name);
-  form.append("confidentiality", payload.confidentiality);
+  form.append("template_name", payload.template_name || "Executive MoM");
+  form.append("confidentiality", payload.confidentiality || "Internal");
   form.append("project", payload.project || "");
   form.append("host", payload.host || "");
   form.append("run_now", String(payload.run_now ?? true));

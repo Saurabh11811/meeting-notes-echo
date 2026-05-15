@@ -52,6 +52,10 @@ processing:
     scroll_pause_ms: 900
     stabilize_rounds: 3
 
+queue:
+  auto_process: true
+  process_interval_seconds: 10
+
 summary:
   default_backend: dify
   timeout_seconds: 240

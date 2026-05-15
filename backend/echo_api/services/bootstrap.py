@@ -5,6 +5,7 @@ from echo_api.core.paths import storage_path
 from echo_api.db.connection import db_session
 from echo_api.db.schema import initialize_database
 from echo_api.db.seed import seed_reference_data
+from echo_api.services.processing_service import recover_interrupted_jobs, start_queue_coordinator
 
 
 def bootstrap_application() -> None:
@@ -17,4 +18,5 @@ def bootstrap_application() -> None:
     with db_session() as conn:
         initialize_database(conn)
         seed_reference_data(conn)
-
+    recover_interrupted_jobs()
+    start_queue_coordinator()

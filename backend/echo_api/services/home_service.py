@@ -6,12 +6,26 @@ from echo_api.db.connection import db_session
 def get_home_summary() -> dict:
     with db_session() as conn:
         counts = {
-            "meetings_processed": conn.execute("SELECT COUNT(*) FROM meetings").fetchone()[0],
+            "meetings_processed": conn.execute(
+                """
+                SELECT COUNT(*)
+                FROM meetings m
+                WHERE EXISTS (SELECT 1 FROM mom_versions mv WHERE mv.meeting_id = m.id)
+                """
+            ).fetchone()[0],
             "pending_review": conn.execute(
-                "SELECT COUNT(*) FROM meetings WHERE status IN ('Ready for review', 'draft')"
+                """
+                SELECT COUNT(*)
+                FROM meetings m
+                WHERE m.status IN ('Ready for review', 'draft')
+                  AND EXISTS (SELECT 1 FROM mom_versions mv WHERE mv.meeting_id = m.id)
+                """
             ).fetchone()[0],
             "queue_running": conn.execute(
                 "SELECT COUNT(*) FROM queue_jobs WHERE status = 'running'"
+            ).fetchone()[0],
+            "queue_waiting": conn.execute(
+                "SELECT COUNT(*) FROM queue_jobs WHERE status IN ('queued', 'scheduled')"
             ).fetchone()[0],
             "action_items_open": conn.execute(
                 "SELECT COUNT(*) FROM action_items WHERE status != 'Done'"
@@ -27,7 +41,7 @@ def get_home_summary() -> dict:
                        json_extract(source_payload_json, '$.title') AS title,
                        json_extract(source_payload_json, '$.template_name') AS template_name
                 FROM queue_jobs
-                WHERE status IN ('queued', 'running', 'failed')
+                WHERE status IN ('queued', 'scheduled', 'running', 'failed')
                 ORDER BY updated_at DESC
                 LIMIT 8
                 """
@@ -57,6 +71,7 @@ def get_home_summary() -> dict:
                        COALESCE((SELECT COUNT(*) FROM action_items a WHERE a.meeting_id = m.id), 0) AS action_items_count,
                        COALESCE((SELECT MAX(version_number) FROM mom_versions mv WHERE mv.meeting_id = m.id), 0) AS mom_version
                 FROM meetings m
+                WHERE EXISTS (SELECT 1 FROM mom_versions mv WHERE mv.meeting_id = m.id)
                 ORDER BY m.updated_at DESC
                 LIMIT 8
                 """

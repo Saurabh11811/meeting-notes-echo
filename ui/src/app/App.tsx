@@ -7,6 +7,7 @@ import { MeetingDetailPage } from "./components/pages/meeting-detail-page";
 import { TemplatesPage } from "./components/pages/templates-page";
 import { SettingsPage } from "./components/pages/settings-page";
 import { SearchPalette } from "./components/search-palette";
+import { ActivityDrawer } from "./components/activity-drawer";
 
 export type PageId = "home" | "notes" | "detail" | "templates" | "settings";
 
@@ -22,6 +23,7 @@ export default function App() {
   const [page, setPage] = useState<PageId>("home");
   const [selectedMeetingId, setSelectedMeetingId] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [activityOpen, setActivityOpen] = useState(false);
 
   const openMeeting = (meetingId?: string) => {
     if (meetingId) {
@@ -40,7 +42,7 @@ export default function App() {
         />
         <main className="flex-1 overflow-y-auto">
           <div className="max-w-[1320px] mx-auto px-8 py-6">
-            {page === "home" && <HomePage onOpenReview={openMeeting} />}
+            {page === "home" && <HomePage onOpenReview={openMeeting} onOpenActivity={() => setActivityOpen(true)} onViewAllNotes={() => setPage("notes")} />}
             {page === "notes" && <MeetingNotesPage onOpen={openMeeting} />}
             {page === "detail" && <MeetingDetailPage meetingId={selectedMeetingId} onBack={() => setPage("notes")} />}
             {page === "templates" && <TemplatesPage />}
@@ -50,6 +52,7 @@ export default function App() {
       </div>
 
       <SearchPalette open={searchOpen} onClose={() => setSearchOpen(false)} onOpenMeeting={openMeeting} />
+      <ActivityDrawer open={activityOpen} onClose={() => setActivityOpen(false)} />
     </div>
   );
 }

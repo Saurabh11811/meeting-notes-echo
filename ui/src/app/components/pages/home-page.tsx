@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link2, Upload, FileText, Sparkles, ChevronDown, Wand2, Mic, Clock, AlertTriangle, X, Plus, Layers, CheckCircle2 } from "lucide-react";
-import { createJobs, createUploadJobs, getHomeSummary, type HomeSummary } from "../../api/echo-api";
+import { Link2, Upload, FileText, Sparkles, ChevronDown, Wand2, Mic, Clock, AlertTriangle, X, Plus, CheckCircle2, Play } from "lucide-react";
+import { createJobs, createUploadJobs, getHomeSummary, processAvailableJobs, startJob, type HomeSummary } from "../../api/echo-api";
 
 const tabs = [
   { id: "links", label: "Meeting Links", icon: Link2 },
@@ -23,8 +23,18 @@ const toneText: Record<string, string> = {
   success: "text-echo-success",
 };
 
-export function HomePage({ onOpenReview }: { onOpenReview: (meetingId: string) => void }) {
+export function HomePage({
+  onOpenReview,
+  onOpenActivity,
+  onViewAllNotes,
+}: {
+  onOpenReview: (meetingId: string) => void;
+  onOpenActivity: () => void;
+  onViewAllNotes: () => void;
+}) {
   const [home, setHome] = useState<HomeSummary | null>(null);
+  const [queueMessage, setQueueMessage] = useState("");
+  const [queueBusy, setQueueBusy] = useState(false);
 
   const refreshHome = () => {
     return getHomeSummary()
@@ -46,9 +56,10 @@ export function HomePage({ onOpenReview }: { onOpenReview: (meetingId: string) =
       id: job.id,
       title: job.title || "Untitled meeting",
       status: job.stage,
+      jobStatus: job.status,
       progress: job.progress,
-      icon: job.status === "failed" ? AlertTriangle : job.stage.toLowerCase().includes("transcrib") ? Mic : job.status === "queued" ? Clock : Wand2,
-      tone: job.status === "failed" ? "warning" : job.status === "queued" ? "muted" : "accent",
+      icon: job.status === "failed" ? AlertTriangle : job.stage.toLowerCase().includes("transcrib") ? Mic : ["queued", "scheduled"].includes(job.status) ? Clock : Wand2,
+      tone: job.status === "failed" ? "warning" : ["queued", "scheduled"].includes(job.status) ? "muted" : "accent",
       events: job.events || [],
       errorMessage: job.error_message || "",
       sourceType: job.source_type,
@@ -57,6 +68,34 @@ export function HomePage({ onOpenReview }: { onOpenReview: (meetingId: string) =
     }));
   }, [home]);
 
+  const handleStartJob = async (jobId: string) => {
+    setQueueBusy(true);
+    setQueueMessage("");
+    try {
+      await startJob(jobId);
+      setQueueMessage("Started queued job.");
+      await refreshHome();
+    } catch (error) {
+      setQueueMessage(error instanceof Error ? error.message : "Could not start job.");
+    } finally {
+      setQueueBusy(false);
+    }
+  };
+
+  const handleStartAll = async () => {
+    setQueueBusy(true);
+    setQueueMessage("");
+    try {
+      const result = await processAvailableJobs();
+      setQueueMessage(result.message);
+      await refreshHome();
+    } catch (error) {
+      setQueueMessage(error instanceof Error ? error.message : "Could not start the queue.");
+    } finally {
+      setQueueBusy(false);
+    }
+  };
+
   const recentRows = useMemo(() => {
     if (!home?.recent_meetings?.length) return [];
     return home.recent_meetings.map((meeting) => ({
@@ -64,7 +103,7 @@ export function HomePage({ onOpenReview }: { onOpenReview: (meetingId: string) =
       title: meeting.title,
       date: formatDate(meeting.updated_at || meeting.created_at),
       type: meeting.meeting_type,
-      status: meeting.status,
+      status: displayMeetingStatus(meeting.status),
       tone: meeting.status.toLowerCase().includes("attention") ? "warning" : meeting.status.toLowerCase().includes("review") ? "accent" : "success",
     }));
   }, [home]);
@@ -74,8 +113,16 @@ export function HomePage({ onOpenReview }: { onOpenReview: (meetingId: string) =
       <CreateBlock onCreated={refreshHome} />
 
       <div className="grid grid-cols-1 xl:grid-cols-5 gap-5">
-        <InProgressCard className="xl:col-span-2" jobs={jobs} />
-        <RecentCard className="xl:col-span-3" rows={recentRows} onOpen={onOpenReview} />
+        <QueueCard
+          className="xl:col-span-2"
+          jobs={jobs}
+          message={queueMessage}
+          busy={queueBusy}
+          onStartJob={handleStartJob}
+          onStartAll={handleStartAll}
+          onOpenActivity={onOpenActivity}
+        />
+        <RecentCard className="xl:col-span-3" rows={recentRows} onOpen={onOpenReview} onViewAll={onViewAllNotes} />
       </div>
     </div>
   );
@@ -85,6 +132,7 @@ function CreateBlock({ onCreated }: { onCreated: () => Promise<void> }) {
   const [active, setActive] = useState("links");
   const [bulk, setBulk] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
+  const [transcriptFiles, setTranscriptFiles] = useState<File[]>([]);
   const [linkText, setLinkText] = useState("");
   const [transcriptText, setTranscriptText] = useState("");
   const [meetingType, setMeetingType] = useState("Executive");
@@ -96,23 +144,36 @@ function CreateBlock({ onCreated }: { onCreated: () => Promise<void> }) {
     setFiles((current) => [...current, ...Array.from(selected)]);
   };
 
+  const handleTranscriptFiles = (selected: FileList | null) => {
+    if (!selected?.length) return;
+    setTranscriptFiles((current) => [...current, ...Array.from(selected)]);
+  };
+
   const submit = async (runNow: boolean) => {
     const sourceType = active === "links" ? "url" : active === "upload" ? "upload" : "transcript";
-    const sources =
-      sourceType === "url"
-        ? linkText.split(/\n+/).map((line) => line.trim()).filter(Boolean)
-        : sourceType === "upload"
-          ? files.map((file) => file.name)
-          : [transcriptText.trim()].filter(Boolean);
-
-    if (!sources.length) {
-      setMessage("Add at least one link, recording, or transcript first.");
-      return;
-    }
 
     setSubmitting(true);
     setMessage("");
     try {
+      const uploadedTranscripts = sourceType === "transcript"
+        ? await Promise.all(transcriptFiles.map(async (file) => {
+            const text = (await file.text()).trim();
+            return text ? `${file.name}\n\n${text}` : "";
+          }))
+        : [];
+      const sources =
+        sourceType === "url"
+          ? linkText.split(/\n+/).map((line) => line.trim()).filter(Boolean)
+          : sourceType === "upload"
+            ? files.map((file) => file.name)
+            : [transcriptText.trim(), ...uploadedTranscripts].filter(Boolean);
+
+      if (!sources.length) {
+        setMessage("Add at least one link, recording, or transcript first.");
+        setSubmitting(false);
+        return;
+      }
+
       const result = sourceType === "upload"
         ? await createUploadJobs({
             files,
@@ -127,12 +188,15 @@ function CreateBlock({ onCreated }: { onCreated: () => Promise<void> }) {
           });
       setMessage(
         runNow
-          ? `${result.jobs.length} item${result.jobs.length === 1 ? "" : "s"} started. A browser window may open for transcript capture.`
-          : `${result.jobs.length} item${result.jobs.length === 1 ? "" : "s"} added to the queue.`
+          ? `${result.jobs.length} item${result.jobs.length === 1 ? "" : "s"} queued to start immediately.`
+          : `${result.jobs.length} item${result.jobs.length === 1 ? "" : "s"} saved to start later.`
       );
       if (sourceType === "url") setLinkText("");
       if (sourceType === "upload") setFiles([]);
-      if (sourceType === "transcript") setTranscriptText("");
+      if (sourceType === "transcript") {
+        setTranscriptText("");
+        setTranscriptFiles([]);
+      }
       await onCreated();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not add item to the queue.");
@@ -210,12 +274,37 @@ function CreateBlock({ onCreated }: { onCreated: () => Promise<void> }) {
         )}
 
         {active === "transcript" && (
-          <textarea
-            value={transcriptText}
-            onChange={(event) => setTranscriptText(event.target.value)}
-            placeholder="Paste transcript text or select a saved transcript…"
-            className="w-full h-24 p-3 rounded-md border border-echo-border bg-echo-surface-2 text-[13px] text-echo-text placeholder:text-echo-text-faint focus:outline-none focus:bg-echo-surface focus:border-echo-accent"
-          />
+          <div>
+            <textarea
+              value={transcriptText}
+              onChange={(event) => setTranscriptText(event.target.value)}
+              placeholder="Paste transcript text…"
+              className="w-full h-24 p-3 rounded-md border border-echo-border bg-echo-surface-2 text-[13px] text-echo-text placeholder:text-echo-text-faint focus:outline-none focus:bg-echo-surface focus:border-echo-accent"
+            />
+            <label className="mt-3 flex items-center justify-center gap-2 h-10 rounded-md border border-dashed border-echo-border bg-echo-surface-2 text-[12px] text-echo-text-muted hover:border-echo-accent hover:text-echo-text cursor-pointer">
+              <input
+                type="file"
+                multiple={bulk}
+                accept=".txt,.md,.vtt,.srt,text/plain,text/markdown"
+                className="hidden"
+                onChange={(event) => handleTranscriptFiles(event.target.files)}
+              />
+              <Upload size={13} className="text-echo-accent" />
+              Upload transcript file{bulk ? "s" : ""}
+            </label>
+            {transcriptFiles.length > 0 && (
+              <ul className="mt-3 space-y-1.5">
+                {transcriptFiles.map((f, i) => (
+                  <li key={`${f.name}-${i}`} className="flex items-center gap-2 px-3 py-2 rounded-md border border-echo-border bg-echo-surface-2 text-[12px]">
+                    <FileText size={12} className="text-echo-text-muted" />
+                    <span className="flex-1 truncate text-echo-text">{f.name}</span>
+                    <span className="text-[10px] text-echo-text-faint">Ready</span>
+                    <button onClick={() => setTranscriptFiles(transcriptFiles.filter((_, idx) => idx !== i))} className="text-echo-text-faint hover:text-echo-danger"><X size={12} /></button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         )}
       </div>
 
@@ -225,11 +314,11 @@ function CreateBlock({ onCreated }: { onCreated: () => Promise<void> }) {
         <div className="w-full flex items-center gap-2 pt-1">
           <button disabled={submitting} onClick={() => submit(true)} className="inline-flex items-center gap-2 h-9 px-4 rounded-md bg-echo-accent hover:bg-echo-accent-hover text-white text-[13px] shadow-sm disabled:opacity-60" style={{ color: "#fff" }}>
             <Sparkles size={14} />
-            {submitting ? "Adding…" : bulk ? "Generate all MoMs" : "Generate MoM"}
+            {submitting ? "Adding…" : bulk ? "Start all immediately" : "Start immediately"}
           </button>
           <button disabled={submitting} onClick={() => submit(false)} className="inline-flex items-center gap-2 h-9 px-3 rounded-md border border-echo-border bg-echo-surface text-echo-text text-[13px] hover:bg-echo-surface-hover disabled:opacity-60">
             <Plus size={14} />
-            Add to queue
+            Start later
           </button>
           {message && <span className="text-[12px] text-echo-text-muted ml-auto">{message}</span>}
         </div>
@@ -254,6 +343,7 @@ type HomeJobView = {
   id: string;
   title: string;
   status: string;
+  jobStatus: string;
   progress: number;
   icon: typeof Wand2;
   tone: string;
@@ -264,13 +354,41 @@ type HomeJobView = {
   updatedAt: string;
 };
 
-function InProgressCard({ className = "", jobs }: { className?: string; jobs: HomeJobView[] }) {
+function QueueCard({
+  className = "",
+  jobs,
+  message,
+  busy,
+  onStartJob,
+  onStartAll,
+  onOpenActivity,
+}: {
+  className?: string;
+  jobs: HomeJobView[];
+  message: string;
+  busy: boolean;
+  onStartJob: (jobId: string) => void;
+  onStartAll: () => void;
+  onOpenActivity: () => void;
+}) {
+  const queuedCount = jobs.filter((job) => job.jobStatus === "queued").length;
+  const waitingCount = jobs.filter((job) => job.jobStatus === "queued" || job.jobStatus === "scheduled").length;
   return (
     <section className={`bg-echo-surface border border-echo-border rounded-lg ${className}`}>
-      <SectionHeader title="In progress" subtitle={`${jobs.length} jobs`} action="View activity" />
+      <SectionHeader title="Queue" subtitle={`${waitingCount} waiting · ${jobs.length} active`} action="View activity" onAction={onOpenActivity} />
+      <div className="px-5 py-3 border-b border-echo-border bg-echo-surface-2/50 flex items-center gap-2">
+        <button
+          disabled={busy || queuedCount === 0}
+          onClick={onStartAll}
+          className="h-7 px-2.5 rounded-md border border-echo-border bg-echo-surface text-[11px] text-echo-text inline-flex items-center gap-1.5 hover:bg-echo-surface-hover disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <Play size={11} />Start all
+        </button>
+        {message && <span className="text-[11px] text-echo-text-muted truncate">{message}</span>}
+      </div>
       {jobs.length === 0 ? (
         <div className="px-5 py-8 text-center text-[12px] text-echo-text-muted">
-          No active jobs. Paste a meeting link or transcript above to start.
+          No queued jobs. Paste a meeting link or transcript above to start.
         </div>
       ) : (
         <ul className="divide-y divide-echo-border">
@@ -287,6 +405,19 @@ function InProgressCard({ className = "", jobs }: { className?: string; jobs: Ho
                       <div className={`text-[10.5px] mt-0.5 ${toneText[j.tone]}`}>{j.status}</div>
                     </div>
                     <div className="w-12 text-right text-[10px] text-echo-text-faint">{j.progress}%</div>
+                    {j.jobStatus === "queued" && (
+                      <button
+                        disabled={busy}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          onStartJob(j.id);
+                        }}
+                        className="h-7 px-2 rounded-md border border-echo-border bg-echo-surface text-[11px] text-echo-text inline-flex items-center gap-1 hover:bg-echo-surface-hover disabled:opacity-50"
+                      >
+                        <Play size={11} />Start
+                      </button>
+                    )}
                     <ChevronDown size={13} className="text-echo-text-faint" />
                   </div>
                   <div className="mt-2 h-1 rounded-full bg-echo-surface-2 overflow-hidden ml-10">
@@ -298,7 +429,7 @@ function InProgressCard({ className = "", jobs }: { className?: string; jobs: Ho
                     <div>Source: <span className="text-echo-text">{j.sourceType}</span></div>
                     <div>Template: <span className="text-echo-text">{j.templateName || "Default"}</span></div>
                     <div>Updated: <span className="text-echo-text">{formatTime(j.updatedAt)}</span></div>
-                    <div>Status: <span className={toneText[j.tone]}>{j.status}</span></div>
+                    <div>Status: <span className={toneText[j.tone]}>{j.jobStatus}</span></div>
                   </div>
                   {j.errorMessage && <div className="mb-3 text-[11.5px] text-echo-danger">{j.errorMessage}</div>}
                   {j.events.length === 0 ? (
@@ -338,10 +469,10 @@ type RecentRow = {
   tone: string;
 };
 
-function RecentCard({ className = "", rows, onOpen }: { className?: string; rows: RecentRow[]; onOpen: (meetingId: string) => void }) {
+function RecentCard({ className = "", rows, onOpen, onViewAll }: { className?: string; rows: RecentRow[]; onOpen: (meetingId: string) => void; onViewAll: () => void }) {
   return (
     <section className={`bg-echo-surface border border-echo-border rounded-lg overflow-hidden ${className}`}>
-      <SectionHeader title="Recent meeting notes" subtitle="Last 7 days" action="Open archive" />
+      <SectionHeader title="Recent meeting notes" subtitle="Last 7 days" action="View all" onAction={onViewAll} />
       <table className="w-full text-[12px]">
         <thead className="bg-echo-surface-2 text-echo-text-muted">
           <tr>
@@ -390,14 +521,18 @@ function formatTime(value: string) {
   return date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
-function SectionHeader({ title, subtitle, action }: { title: string; subtitle?: string; action?: string }) {
+function displayMeetingStatus(status: string) {
+  return status === "Ready for review" ? "Completed" : status;
+}
+
+function SectionHeader({ title, subtitle, action, onAction }: { title: string; subtitle?: string; action?: string; onAction?: () => void }) {
   return (
     <div className="px-5 py-3 flex items-center justify-between border-b border-echo-border">
       <div className="flex items-baseline gap-2">
         <h3 className="text-[13px] text-echo-text" style={{ fontWeight: 600 }}>{title}</h3>
         {subtitle && <span className="text-[11px] text-echo-text-muted">{subtitle}</span>}
       </div>
-      {action && <button className="text-[11.5px] text-echo-accent hover:text-echo-accent-hover">{action} →</button>}
+      {action && <button onClick={onAction} className="text-[11.5px] text-echo-accent hover:text-echo-accent-hover">{action} →</button>}
     </div>
   );
 }

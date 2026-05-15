@@ -81,6 +81,7 @@ def create_jobs(payload: dict) -> list[dict]:
                             "title": title,
                             "source": source if source_type != "transcript" else "pasted transcript",
                             "template_name": payload.get("template_name") or "Executive MoM",
+                            "auto_start": bool(payload.get("run_now", True)),
                         }
                     ),
                     stage,
@@ -103,10 +104,10 @@ def create_jobs(payload: dict) -> list[dict]:
             if payload.get("run_now", True) and source_type in ("url", "transcript", "upload"):
                 should_process.append(job_id)
     if should_process:
-        from echo_api.services.processing_service import submit_job
+        from echo_api.services.processing_service import start_job
 
         for job_id in should_process:
-            submit_job(job_id)
+            start_job(job_id)
     return created
 
 

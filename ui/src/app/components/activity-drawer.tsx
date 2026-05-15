@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { X, Pause, RefreshCcw, AlertTriangle, CheckCircle2, Clock, FileText, Mic, Wand2 } from "lucide-react";
-import { getHomeSummary, type HomeSummary } from "../api/echo-api";
+import { X, Pause, RefreshCcw, AlertTriangle, CheckCircle2, Clock, FileText, Mic, Wand2, Play } from "lucide-react";
+import { getHomeSummary, processAvailableJobs, retryFailedJobs, type HomeSummary } from "../api/echo-api";
 
 const toneBar: Record<string, string> = {
   accent: "bg-echo-accent",
@@ -12,10 +12,13 @@ const toneBar: Record<string, string> = {
 
 export function ActivityDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [home, setHome] = useState<HomeSummary | null>(null);
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const refresh = () => getHomeSummary().then(setHome).catch(() => setHome(null));
 
   useEffect(() => {
     if (!open) return;
-    const refresh = () => getHomeSummary().then(setHome).catch(() => setHome(null));
     refresh();
     const interval = window.setInterval(refresh, 5000);
     return () => window.clearInterval(interval);
@@ -26,16 +29,47 @@ export function ActivityDrawer({ open, onClose }: { open: boolean; onClose: () =
       id: job.id,
       title: job.title || "Untitled meeting",
       status: job.stage,
+      jobStatus: job.status,
       progress: job.progress,
       updated: formatTime(job.updated_at),
-      icon: job.status === "failed" ? AlertTriangle : job.stage.toLowerCase().includes("transcrib") ? Mic : job.source_type === "upload" ? FileText : job.status === "queued" ? Clock : Wand2,
-      tone: job.status === "failed" ? "warning" : job.status === "completed" ? "success" : job.status === "queued" ? "muted" : "accent",
+      icon: job.status === "failed" ? AlertTriangle : job.stage.toLowerCase().includes("transcrib") ? Mic : job.source_type === "upload" ? FileText : ["queued", "scheduled"].includes(job.status) ? Clock : Wand2,
+      tone: job.status === "failed" ? "warning" : job.status === "completed" ? "success" : ["queued", "scheduled"].includes(job.status) ? "muted" : "accent",
       errorMessage: job.error_message || "",
       events: job.events || [],
     }));
   }, [home]);
 
   const failed = jobs.find((job) => job.tone === "warning");
+  const failedCount = jobs.filter((job) => job.tone === "warning").length;
+  const queuedCount = jobs.filter((job) => job.jobStatus === "queued").length;
+
+  const handleStartAll = async () => {
+    setBusy(true);
+    setMessage("");
+    try {
+      const result = await processAvailableJobs();
+      setMessage(result.message);
+      await refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not start the queue.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRetryFailed = async () => {
+    setBusy(true);
+    setMessage("");
+    try {
+      const result = await retryFailedJobs();
+      setMessage(result.message);
+      await refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not retry failed jobs.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <>
@@ -50,9 +84,22 @@ export function ActivityDrawer({ open, onClose }: { open: boolean; onClose: () =
         </div>
 
         <div className="px-5 py-3 border-b border-echo-border bg-echo-surface-2 flex items-center gap-2">
+          <button
+            disabled={busy || queuedCount === 0}
+            onClick={handleStartAll}
+            className="h-7 px-2.5 rounded-md border border-echo-border bg-echo-surface text-[11px] text-echo-text inline-flex items-center gap-1.5 hover:bg-echo-surface-hover disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Play size={11} />Start all
+          </button>
           <button disabled className="h-7 px-2.5 rounded-md border border-echo-border bg-echo-surface text-[11px] text-echo-text-muted inline-flex items-center gap-1.5 cursor-not-allowed"><Pause size={11} />Pause</button>
-          <button disabled className="h-7 px-2.5 rounded-md border border-echo-border bg-echo-surface text-[11px] text-echo-text-muted inline-flex items-center gap-1.5 cursor-not-allowed"><RefreshCcw size={11} />Retry attention</button>
-          <button disabled className="h-7 px-2.5 rounded-md border border-echo-border bg-echo-surface text-[11px] text-echo-text-muted ml-auto cursor-not-allowed">Clear completed</button>
+          <button
+            disabled={busy || failedCount === 0}
+            onClick={handleRetryFailed}
+            className="h-7 px-2.5 rounded-md border border-echo-border bg-echo-surface text-[11px] text-echo-text inline-flex items-center gap-1.5 hover:bg-echo-surface-hover disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <RefreshCcw size={11} />Retry failed
+          </button>
+          {message && <span className="ml-auto text-[11px] text-echo-text-muted truncate">{message}</span>}
         </div>
 
         {failed && (
