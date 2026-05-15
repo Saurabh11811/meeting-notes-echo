@@ -168,6 +168,57 @@ export type JobCreateRequest = {
   run_now?: boolean;
 };
 
+export type EchoTemplate = {
+  id: string;
+  name: string;
+  meeting_type: string;
+  description: string;
+  sections: string[];
+  system_prompt: string;
+  is_default: boolean;
+  is_locked: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TemplateCreateRequest = {
+  name: string;
+  meeting_type?: string;
+  description?: string;
+  sections?: string[];
+  system_prompt?: string;
+  is_default?: boolean;
+};
+
+export type TemplateUpdateRequest = Partial<TemplateCreateRequest>;
+
+export type TemplatePreset = {
+  meeting_type: string;
+  description: string;
+  sections: string[];
+  system_prompt: string;
+};
+
+export type TemplatePromptResponse = {
+  template_id: string;
+  template_name: string;
+  prompt: string;
+  effective_prompt?: string;
+};
+
+export type TemplateVersion = {
+  id: string;
+  template_id: string;
+  version_number: number;
+  name: string;
+  meeting_type: string;
+  description: string;
+  sections: string[];
+  system_prompt: string;
+  change_note: string;
+  created_at: string;
+};
+
 async function request<T>(path: string): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     headers: { Accept: "application/json" },
@@ -178,15 +229,18 @@ async function request<T>(path: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-async function send<T>(path: string, method: "POST" | "PUT", body: unknown): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
+async function send<T>(path: string, method: "POST" | "PUT" | "PATCH" | "DELETE", body?: unknown): Promise<T> {
+  const options: RequestInit = {
     method,
     headers: {
       Accept: "application/json",
-      "Content-Type": "application/json",
     },
-    body: JSON.stringify(body),
-  });
+  };
+  if (body) {
+    (options.headers as any)["Content-Type"] = "application/json";
+    options.body = JSON.stringify(body);
+  }
+  const response = await fetch(`${API_BASE}${path}`, options);
   if (!response.ok) {
     let detail = `${response.status}: ${response.statusText}`;
     try {
@@ -252,6 +306,53 @@ export function getHealth() {
 
 export function updateSettings(values: EchoSettings) {
   return send<EchoSettings>("/settings", "PUT", { values });
+}
+
+export function getTemplates() {
+  return request<{ templates: EchoTemplate[] }>("/templates");
+}
+
+export function getTemplate(templateId: string) {
+  return request<EchoTemplate>(`/templates/${encodeURIComponent(templateId)}`);
+}
+
+export function getTemplatePresets() {
+  return request<{ presets: TemplatePreset[] }>("/templates/presets");
+}
+
+export function getTemplatePrompt(templateId: string) {
+  return request<TemplatePromptResponse>(`/templates/${encodeURIComponent(templateId)}/prompt`);
+}
+
+export function getTemplateVersions(templateId: string) {
+  return request<{ versions: TemplateVersion[] }>(`/templates/${encodeURIComponent(templateId)}/versions`);
+}
+
+export function restoreTemplateVersion(templateId: string, versionId: string) {
+  return send<EchoTemplate>(
+    `/templates/${encodeURIComponent(templateId)}/versions/${encodeURIComponent(versionId)}/restore`,
+    "POST",
+  );
+}
+
+export function createTemplate(payload: TemplateCreateRequest) {
+  return send<EchoTemplate>("/templates", "POST", payload);
+}
+
+export function updateTemplate(templateId: string, payload: TemplateUpdateRequest) {
+  return send<EchoTemplate>(`/templates/${encodeURIComponent(templateId)}`, "PATCH", payload);
+}
+
+export function duplicateTemplate(templateId: string) {
+  return send<EchoTemplate>(`/templates/${encodeURIComponent(templateId)}/duplicate`, "POST");
+}
+
+export function deleteTemplate(templateId: string) {
+  return send<{ status: string }>(`/templates/${encodeURIComponent(templateId)}`, "DELETE");
+}
+
+export function testTemplate(payload: { transcript_text: string; template_name: string; backend_kind?: string }) {
+  return send<{ output: string }>("/sandbox/test-template", "POST", payload);
 }
 
 export function createJobs(payload: JobCreateRequest) {

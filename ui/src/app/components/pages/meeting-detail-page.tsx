@@ -19,8 +19,10 @@ import {
 import {
   getMeetingDetail,
   getSettings,
+  getTemplates,
   meetingExportUrl,
   regenerateMeeting,
+  type EchoTemplate,
   type EchoSettings,
   type MeetingDetail,
   type MomVersion,
@@ -32,9 +34,10 @@ export function MeetingDetailPage({ meetingId, onBack }: { meetingId: string | n
   const [tab, setTab] = useState("MoM");
   const [detail, setDetail] = useState<MeetingDetail | null>(null);
   const [settings, setSettings] = useState<EchoSettings | null>(null);
+  const [templates, setTemplates] = useState<EchoTemplate[]>([]);
   const [selectedVersionId, setSelectedVersionId] = useState("");
   const [expandedVersionIds, setExpandedVersionIds] = useState<string[]>([]);
-  const [templateName, setTemplateName] = useState("Executive MoM");
+  const [templateName, setTemplateName] = useState("");
   const [backendKind, setBackendKind] = useState("");
   const [loading, setLoading] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
@@ -53,7 +56,6 @@ export function MeetingDetailPage({ meetingId, onBack }: { meetingId: string | n
       setDetail(data);
       setError("");
       setSelectedVersionId((current) => current || data.latest_mom?.id || data.mom_versions[0]?.id || "");
-      setTemplateName((current) => current || data.meeting.meeting_type || "Executive MoM");
       setBackendKind((current) => current || data.latest_mom?.backend_kind || "");
     } catch (err) {
       setDetail(null);
@@ -71,16 +73,23 @@ export function MeetingDetailPage({ meetingId, onBack }: { meetingId: string | n
     getSettings().then((data) => {
       setSettings(data);
       setBackendKind((current) => current || data?.summary?.default_backend || "");
-      setTemplateName((current) => current || data?.summary?.default_template || "Executive MoM");
     }).catch(() => setSettings(null));
+    getTemplates().then((data) => setTemplates(data.templates)).catch(() => setTemplates([]));
   }, []);
+
+  useEffect(() => {
+    if (!meeting || !templates.length || templateName) return;
+    const matching = templates.filter((template) => template.meeting_type === meeting.meeting_type);
+    const preferred = matching.find((template) => template.is_default) || matching[0] || templates.find((template) => template.is_default) || templates[0];
+    setTemplateName(preferred?.name || "");
+  }, [meeting, templates, templateName]);
 
   const meeting = detail?.meeting;
   const selectedMom = useMemo(() => {
     if (!detail) return null;
     return detail.mom_versions.find((version) => version.id === selectedVersionId) || detail.latest_mom;
   }, [detail, selectedVersionId]);
-  const templateOptions = useMemo(() => templateNames(settings, meeting?.meeting_type), [settings, meeting?.meeting_type]);
+  const templateOptions = useMemo(() => templateNames(templates, meeting?.meeting_type, templateName), [templates, meeting?.meeting_type, templateName]);
   const backendOptions = useMemo(() => backendProfiles(settings, selectedMom?.backend_kind), [settings, selectedMom?.backend_kind]);
 
   const handleViewVersion = (versionId: string) => {
@@ -543,11 +552,12 @@ function htmlDocumentFragment(innerHtml: string) {
   `;
 }
 
-function templateNames(settings: EchoSettings | null, meetingType?: string): Array<{ value: string; label: string }> {
-  const defaults = settings?.templates?.defaults || [];
-  const names = defaults.map((item: any) => item.name).filter(Boolean);
-  const fallback = meetingType ? [`${meetingType} MoM`, "Executive MoM"] : ["Executive MoM"];
-  return Array.from(new Set([...names, ...fallback])).map((name) => ({ value: name, label: name }));
+function templateNames(templates: EchoTemplate[], meetingType?: string, current?: string): Array<{ value: string; label: string }> {
+  const matching = meetingType ? templates.filter((template) => template.meeting_type === meetingType) : [];
+  const ordered = matching.length ? matching : templates;
+  const names = ordered.map((template) => template.name).filter(Boolean);
+  if (current && !names.includes(current)) names.unshift(current);
+  return names.map((name) => ({ value: name, label: name }));
 }
 
 function backendProfiles(settings: EchoSettings | null, current?: string): Array<{ value: string; label: string }> {

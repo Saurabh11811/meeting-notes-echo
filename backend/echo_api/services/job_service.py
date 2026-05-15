@@ -11,6 +11,7 @@ from fastapi import UploadFile
 
 from echo_api.core.paths import storage_path
 from echo_api.db.connection import db_session
+from echo_api.services.template_service import get_default_template_for_type
 
 
 def create_jobs(payload: dict) -> list[dict]:
@@ -18,6 +19,8 @@ def create_jobs(payload: dict) -> list[dict]:
     if not sources:
         raise ValueError("At least one source is required.")
 
+    meeting_type = payload.get("meeting_type") or "Executive"
+    template_name = payload.get("template_name") or resolve_default_template_name(meeting_type)
     created: list[dict] = []
     should_process: list[str] = []
     with db_session() as conn:
@@ -38,14 +41,14 @@ def create_jobs(payload: dict) -> list[dict]:
                 (
                     meeting_id,
                     title,
-                    payload.get("meeting_type") or "Executive",
+                    meeting_type,
                     payload.get("project") or "",
                     payload.get("host") or "",
                     source_type,
                     source if source_type != "transcript" else "Pasted transcript",
                     "Queued",
                     payload.get("confidentiality") or "Internal",
-                    json.dumps([payload.get("meeting_type") or "Executive"]),
+                    json.dumps([meeting_type]),
                     now,
                     now,
                 ),
@@ -80,7 +83,7 @@ def create_jobs(payload: dict) -> list[dict]:
                         {
                             "title": title,
                             "source": source if source_type != "transcript" else "pasted transcript",
-                            "template_name": payload.get("template_name") or "Executive MoM",
+                            "template_name": template_name,
                             "auto_start": bool(payload.get("run_now", True)),
                         }
                     ),
@@ -180,6 +183,13 @@ def infer_title(source: str, source_type: str) -> str:
 def truncate(value: str, limit: int = 96) -> str:
     value = " ".join(value.split())
     return value if len(value) <= limit else value[: limit - 1].rstrip() + "…"
+
+
+def resolve_default_template_name(meeting_type: str) -> str:
+    template = get_default_template_for_type(meeting_type)
+    if template:
+        return template["name"]
+    return "Executive MoM"
 
 
 def sanitize_upload_name(filename: str) -> str:

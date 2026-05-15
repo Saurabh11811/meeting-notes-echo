@@ -5,6 +5,7 @@ from sqlite3 import Connection
 from uuid import uuid4
 
 from echo_api.core.config import load_app_config
+from echo_api.services.template_service import build_template_prompt
 
 
 def seed_reference_data(conn: Connection) -> None:
@@ -21,8 +22,8 @@ def seed_templates(conn: Connection) -> None:
         conn.execute(
             """
             INSERT INTO templates (
-              id, name, meeting_type, description, sections_json, is_default, is_locked
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+              id, name, meeting_type, description, sections_json, system_prompt, is_default, is_locked
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 str(uuid4()),
@@ -30,6 +31,11 @@ def seed_templates(conn: Connection) -> None:
                 template["meeting_type"],
                 template.get("description", ""),
                 json.dumps(template.get("sections", [])),
+                template.get("system_prompt", "") or build_template_prompt(
+                    name=template["name"],
+                    description=template.get("description", ""),
+                    sections=template.get("sections", []),
+                ),
                 1 if template.get("is_default") else 0,
                 1 if template.get("is_locked") else 0,
             ),

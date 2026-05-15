@@ -177,6 +177,24 @@ def regenerate_meeting_mom(
         if not transcript:
             raise ValueError("This meeting has no saved transcript to regenerate from.")
 
+        resolved_template_name = template_name
+        if not resolved_template_name:
+            template = conn.execute(
+                """
+                SELECT name
+                FROM templates
+                WHERE meeting_type = ?
+                ORDER BY is_default DESC, is_locked DESC, name ASC
+                LIMIT 1
+                """,
+                (meeting["meeting_type"],),
+            ).fetchone()
+            if not template:
+                template = conn.execute(
+                    "SELECT name FROM templates ORDER BY is_default DESC, is_locked DESC, name ASC LIMIT 1"
+                ).fetchone()
+            resolved_template_name = template["name"] if template else "Executive MoM"
+
         job_id = str(uuid4())
         stage = "Ready to create MoM" if run_now else "Waiting"
         conn.execute(
@@ -195,7 +213,7 @@ def regenerate_meeting_mom(
                     {
                         "title": meeting["title"],
                         "source": "saved transcript",
-                        "template_name": template_name or meeting["meeting_type"] or "Executive MoM",
+                        "template_name": resolved_template_name,
                         "backend_kind": backend_kind,
                         "auto_start": bool(run_now),
                     }

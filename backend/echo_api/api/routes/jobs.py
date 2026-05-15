@@ -15,7 +15,7 @@ class JobCreateRequest(BaseModel):
     source_type: Literal["url", "upload", "transcript"]
     sources: list[str] = Field(default_factory=list)
     meeting_type: str = "Executive"
-    template_name: str = "Executive MoM"
+    template_name: str = ""
     confidentiality: str = "Internal"
     project: str = ""
     host: str = ""
@@ -74,7 +74,7 @@ def start_queue_job(job_id: str) -> dict:
 async def create_upload_queue_jobs(
     files: list[UploadFile] = File(...),
     meeting_type: str = Form("Executive"),
-    template_name: str = Form("Executive MoM"),
+    template_name: str = Form(""),
     confidentiality: str = Form("Internal"),
     project: str = Form(""),
     host: str = Form(""),

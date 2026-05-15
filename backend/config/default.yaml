@@ -73,7 +73,7 @@ backends:
   dify:
     enabled: true
     name: Dify
-    base_url: https://service-dify-devs.maersk-digital.net/v1
+    base_url: https://api.dify.ai/v1
     api_key: ""
   azure:
     enabled: false

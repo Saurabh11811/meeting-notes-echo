@@ -396,6 +396,7 @@ def summarize_and_complete(job: dict, transcript_id: str, transcript: str) -> No
     source_payload = json.loads(job.get("source_payload_json") or "{}")
     backend_kind = (source_payload.get("backend_kind") or config.get("summary", {}).get("default_backend", "local")).strip()
     template_name = (source_payload.get("template_name") or config.get("summary", {}).get("default_template", "Executive MoM")).strip()
+    template_id = resolve_template_id(template_name)
     config = apply_generation_options(config, backend_kind=backend_kind, template_name=template_name)
     update_job(
         job["id"],
@@ -428,7 +429,7 @@ def summarize_and_complete(job: dict, transcript_id: str, transcript: str) -> No
                 job["meeting_id"],
                 transcript_id,
                 version_number,
-                None,
+                template_id,
                 title,
                 summary,
                 summary,
@@ -493,25 +494,32 @@ def apply_generation_options(config: dict, *, backend_kind: str, template_name: 
     if backend_kind:
         updated["summary"]["default_backend"] = backend_kind
     if template_name:
-        base_prompt = load_prompt(updated)
-        template_instruction = template_prompt_instruction(template_name, config)
         updated["summary"]["prompt_file"] = ""
-        updated["summary"]["prompt_text"] = f"{base_prompt.rstrip()}\n\n{template_instruction}".strip()
+        updated["summary"]["prompt_text"] = template_prompt_instruction(template_name, config)
     return updated
 
 
 def template_prompt_instruction(template_name: str, config: dict) -> str:
-    templates = config.get("templates", {}).get("defaults", [])
-    template = next((item for item in templates if item.get("name") == template_name), None)
-    sections = template.get("sections", []) if template else []
-    description = template.get("description", "") if template else ""
-    section_text = ", ".join(sections) if sections else "Summary, Decisions, Action Items, Risks, Next Steps"
-    return (
-        f"Use the '{template_name}' meeting-notes template. "
-        f"{description} "
-        f"Structure the output with these sections where applicable: {section_text}. "
-        "If a section has no evidence in the transcript, write 'Not captured in transcript' instead of inventing content."
-    )
+    with db_session() as conn:
+        row = conn.execute(
+            "SELECT description, sections_json, system_prompt FROM templates WHERE name = ?",
+            (template_name,)
+        ).fetchone()
+
+    if row and row["system_prompt"]:
+        return row["system_prompt"]
+
+    description = row["description"] if row else ""
+    sections = json.loads(row["sections_json"] or "[]") if row else []
+    from echo_api.services.template_service import build_template_prompt
+
+    return build_template_prompt(name=template_name, description=description, sections=sections)
+
+
+def resolve_template_id(template_name: str) -> str | None:
+    with db_session() as conn:
+        row = conn.execute("SELECT id FROM templates WHERE name = ?", (template_name,)).fetchone()
+        return row["id"] if row else None
 
 
 def load_prompt(config: dict) -> str:

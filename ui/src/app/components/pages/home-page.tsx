@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link2, Upload, FileText, Sparkles, ChevronDown, Wand2, Mic, Clock, AlertTriangle, X, Plus, CheckCircle2, Play } from "lucide-react";
-import { createJobs, createUploadJobs, getHomeSummary, processAvailableJobs, startJob, type HomeSummary } from "../../api/echo-api";
+import { createJobs, createUploadJobs, getHomeSummary, getTemplates, processAvailableJobs, startJob, type EchoTemplate, type HomeSummary } from "../../api/echo-api";
 
 const tabs = [
   { id: "links", label: "Meeting Links", icon: Link2 },
@@ -135,9 +135,20 @@ function CreateBlock({ onCreated }: { onCreated: () => Promise<void> }) {
   const [transcriptFiles, setTranscriptFiles] = useState<File[]>([]);
   const [linkText, setLinkText] = useState("");
   const [transcriptText, setTranscriptText] = useState("");
-  const [meetingType, setMeetingType] = useState("Executive");
+  const [templates, setTemplates] = useState<EchoTemplate[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    getTemplates()
+      .then((data) => {
+        setTemplates(data.templates);
+        const preferred = data.templates.find((template) => template.is_default) || data.templates[0];
+        if (preferred) setSelectedTemplateId((current) => current || preferred.id);
+      })
+      .catch(() => setTemplates([]));
+  }, []);
 
   const handleFiles = (selected: FileList | null) => {
     if (!selected?.length) return;
@@ -155,6 +166,9 @@ function CreateBlock({ onCreated }: { onCreated: () => Promise<void> }) {
     setSubmitting(true);
     setMessage("");
     try {
+      const selectedTemplate = selectedTemplateFor(templates, selectedTemplateId);
+      const meetingType = selectedTemplate?.meeting_type || "Executive";
+      const templateName = selectedTemplate?.name || "";
       const uploadedTranscripts = sourceType === "transcript"
         ? await Promise.all(transcriptFiles.map(async (file) => {
             const text = (await file.text()).trim();
@@ -178,12 +192,14 @@ function CreateBlock({ onCreated }: { onCreated: () => Promise<void> }) {
         ? await createUploadJobs({
             files,
             meeting_type: meetingType,
+            template_name: templateName,
             run_now: runNow,
           })
         : await createJobs({
             source_type: sourceType,
             sources,
             meeting_type: meetingType,
+            template_name: templateName,
             run_now: runNow,
           });
       setMessage(
@@ -309,7 +325,11 @@ function CreateBlock({ onCreated }: { onCreated: () => Promise<void> }) {
       </div>
 
       <div className="px-6 py-4 border-t border-echo-border bg-echo-surface-2/50 rounded-b-lg flex items-center gap-3 flex-wrap">
-        <OptionSelect label="Type" value={meetingType} options={["Executive", "Project Review", "Client Call", "Townhall", "Demo/UAT", "Incident"]} onChange={setMeetingType} />
+        <TemplateSelect
+          templates={templates}
+          value={selectedTemplateId}
+          onChange={setSelectedTemplateId}
+        />
 
         <div className="w-full flex items-center gap-2 pt-1">
           <button disabled={submitting} onClick={() => submit(true)} className="inline-flex items-center gap-2 h-10 px-4 rounded-md bg-echo-accent hover:bg-echo-accent-hover text-white text-[14px] shadow-sm disabled:opacity-60" style={{ color: "#fff" }}>
@@ -327,12 +347,28 @@ function CreateBlock({ onCreated }: { onCreated: () => Promise<void> }) {
   );
 }
 
-function OptionSelect({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (value: string) => void }) {
+function selectedTemplateFor(templates: EchoTemplate[], selectedTemplateId: string) {
+  return templates.find((template) => template.id === selectedTemplateId) || templates.find((template) => template.is_default) || templates[0];
+}
+
+function TemplateSelect({
+  templates,
+  value,
+  onChange,
+}: {
+  templates: EchoTemplate[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
   return (
     <label className="flex items-center gap-2 h-10 px-3 rounded-md border border-echo-border bg-echo-surface hover:border-echo-border-strong text-[14px]">
-      <span className="text-echo-text-muted">{label}:</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)} className="bg-transparent text-echo-text focus:outline-none">
-        {options.map((option) => <option key={option} value={option}>{option}</option>)}
+      <span className="text-echo-text-muted">Template:</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)} className="bg-transparent text-echo-text focus:outline-none max-w-[280px]">
+        {templates.map((template) => (
+          <option key={template.id} value={template.id}>
+            {template.name} · {template.meeting_type}{template.is_default ? " (default)" : ""}
+          </option>
+        ))}
       </select>
       <ChevronDown size={11} className="text-echo-text-faint" />
     </label>

@@ -10,7 +10,7 @@ router = APIRouter(prefix="/meetings", tags=["meetings"])
 
 
 class RegenerateRequest(BaseModel):
-    template_name: str = "Executive MoM"
+    template_name: str = ""
     backend_kind: str = ""
     run_now: bool = True
 

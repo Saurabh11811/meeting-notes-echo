@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlite3 import Connection
 
 
-CURRENT_SCHEMA_VERSION = 2
+CURRENT_SCHEMA_VERSION = 3
 
 
 def initialize_database(conn: Connection) -> None:
@@ -14,6 +14,10 @@ def initialize_database(conn: Connection) -> None:
         version = 1
     if version < 2:
         migrate_v2(conn)
+        conn.execute("PRAGMA user_version = 2")
+        version = 2
+    if version < 3:
+        migrate_v3(conn)
         conn.execute(f"PRAGMA user_version = {CURRENT_SCHEMA_VERSION}")
 
 
@@ -43,6 +47,7 @@ def migrate_v1(conn: Connection) -> None:
           meeting_type TEXT NOT NULL,
           description TEXT NOT NULL DEFAULT '',
           sections_json TEXT NOT NULL DEFAULT '[]',
+          system_prompt TEXT NOT NULL DEFAULT '',
           is_default INTEGER NOT NULL DEFAULT 0,
           is_locked INTEGER NOT NULL DEFAULT 0,
           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -203,3 +208,36 @@ def migrate_v2(conn: Connection) -> None:
           ON queue_job_events(job_id, created_at);
         """
     )
+
+
+def migrate_v3(conn: Connection) -> None:
+    ensure_column(conn, "templates", "system_prompt", "TEXT NOT NULL DEFAULT ''")
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS template_versions (
+          id TEXT PRIMARY KEY,
+          template_id TEXT NOT NULL,
+          version_number INTEGER NOT NULL DEFAULT 1,
+          name TEXT NOT NULL,
+          meeting_type TEXT NOT NULL,
+          description TEXT NOT NULL DEFAULT '',
+          sections_json TEXT NOT NULL DEFAULT '[]',
+          system_prompt TEXT NOT NULL DEFAULT '',
+          change_note TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY(template_id) REFERENCES templates(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_template_versions_template
+          ON template_versions(template_id, version_number DESC);
+        """
+    )
+
+
+def ensure_column(conn: Connection, table: str, column: str, definition: str) -> None:
+    existing = {
+        row["name"]
+        for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+    }
+    if column not in existing:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
