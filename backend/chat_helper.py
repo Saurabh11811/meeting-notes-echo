@@ -1,323 +1,276 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Mon Aug 25 23:39:52 2025
-
-@author: saurabh.agarwal
-"""
-
-# chat_helper.py
+# calls_helper.py
 from __future__ import annotations
+import os, json, shutil, logging, subprocess
 from pathlib import Path
-import re, time, json, os
-from typing import Tuple, List
-from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
+from typing import Optional, Dict, Tuple
+import torch
 
-# Defaults are adjustable via function parameters
-DEFAULT_PROFILE = str(Path.home() / ".pw-teams-profile")
+# Optional deps
+try:
+    import transformers  # noqa: F401
+    from transformers import pipeline as hf_pipeline
+    _has_transformers = True
+except Exception:
+    _has_transformers = False
 
-def start_aggressive_pause(page, enforce_pause_ms: int):
-    if enforce_pause_ms <= 0:
-        return
-    js = f"""
-(() => {{
-  const PAUSE_EVERY_MS = {enforce_pause_ms};
-  const pauseAll = (root) => {{
-    const vids = root.querySelectorAll ? root.querySelectorAll('video') : [];
-    vids.forEach(v => {{
-      try {{
-        v.pause();
-        v.autoplay = false;
-        v.muted = true;
-        v.playbackRate = 1.0;
-        v.onplay = () => {{ try{{ v.pause(); }}catch(e){{}} }};
-      }} catch(e) {{}}
-    }});
-  }};
-  const tick = () => {{
-    try {{
-      pauseAll(document);
-      document.querySelectorAll('iframe').forEach(fr => {{
-        try {{
-          if (fr.contentDocument) pauseAll(fr.contentDocument);
-        }} catch(e) {{}}
-      }});
-    }} catch(e) {{}}
-  }};
-  window.__pauseInterval && clearInterval(window.__pauseInterval);
-  tick();
-  window.__pauseInterval = setInterval(tick, PAUSE_EVERY_MS);
-}})();
-"""
-    try: page.evaluate(js)
-    except Exception: pass
+try:
+    from faster_whisper import WhisperModel
+    _has_faster = True
+except Exception:
+    _has_faster = False
 
-def stop_aggressive_pause(page):
-    try: page.evaluate("() => { if (window.__pauseInterval) clearInterval(window.__pauseInterval); }")
-    except Exception: pass
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(level=getattr(logging, LOG_LEVEL, logging.INFO),
+                    format="%(asctime)s | %(levelname)s | %(message)s")
+log = logging.getLogger("calls-helper")
 
-def find_transcript_container(page):
-    """
-    Traverse DOM + Shadow DOM to find the largest scrollable region that looks like the transcript list.
-    Returns ElementHandle or None. Does NOT click anything.
-    """
-    js = r"""
-(() => {
-  const isScroll = el => {
-    const s = getComputedStyle(el);
-    return (s.overflowY === 'auto' || s.overflowY === 'scroll') && el.scrollHeight > el.clientHeight + 10;
-  };
-  const looksLikeList = el => el.getAttribute?.('role') === 'list';
-  const looksTranscripty = el => {
-    const a = (el.getAttribute?.('aria-label')||'') + ' ' + (el.getAttribute?.('title')||'') + ' ' + (el.className||'');
-    const t = el.textContent || '';
-    const hay = (a + ' ' + t).toLowerCase();
-    return hay.includes('transcript') || hay.includes('captions') || hay.includes('subtitles');
-  };
-  const seen = new Set();
-  const stack = [document];
-  let best = null, bestArea = 0;
-  while (stack.length) {
-    const root = stack.pop();
-    const all = root.querySelectorAll ? root.querySelectorAll('*') : [];
-    for (const el of all) {
-      if (seen.has(el)) continue;
-      seen.add(el);
-      if (el.shadowRoot) stack.push(el.shadowRoot);
-      if (isScroll(el) && (looksTranscripty(el) || looksLikeList(el))) {
-        const area = el.clientWidth * el.clientHeight;
-        if (area > bestArea) { bestArea = area; best = el; }
-      }
-    }
-  }
-  return best;
-})()
-"""
-    h = page.evaluate_handle(js)
-    return h.as_element()
+# ---- Corporate TLS support ----
+# In many corporate networks, HTTPS traffic is re-signed by a company root CA.
+# Python packages such as httpx/huggingface_hub may not trust the Windows
+# certificate store by default. If the optional `truststore` package is
+# installed, this lets Python use the OS trust store before any model download
+# is attempted. Set ECHO_USE_TRUSTSTORE=0 to disable.
+if os.getenv("ECHO_USE_TRUSTSTORE", "1") not in ("0", "false", "False"):
+    try:
+        import truststore  # type: ignore
+        truststore.inject_into_ssl()
+        log.info("[TLS] truststore enabled; Python will use the OS certificate store")
+    except Exception as exc:
+        log.debug("[TLS] truststore not enabled: %s", exc)
 
-def collect_visible_text(container_el):
-    txt = container_el.evaluate(r"""
-(el) => {
-  const lines = [];
-  const tsRe = /^\d{1,2}:\d{2}(:\d{2}(\.\d{3})?)?$/;
-  const walk = (node) => {
-    if (!node) return;
-    if (node.nodeType === Node.TEXT_NODE) {
-      const s = (node.nodeValue || '').trim();
-      if (s && !tsRe.test(s)) lines.push(s);
-    }
-    if (node.shadowRoot) node.shadowRoot.childNodes.forEach(walk);
-    node.childNodes && node.childNodes.forEach(walk);
-  };
-  walk(el);
-  const out = [];
-  for (const s of lines) { if (!out.length || s != out[out.length-1]) out.push(s); }
-  return out;
+# ---- Defaults (used if caller doesn't pass params) ----
+USE_FASTER = os.getenv("USE_FASTER_WHISPER", "1") not in ("0", "false", "False")
+DEFAULT_MODEL_SIZE = os.getenv("WHISPER_MODEL_SIZE", "small")  # tiny|base|small|medium|large-v3
+DEFAULT_LANGUAGE   = os.getenv("ASR_LANGUAGE", "en")           # 'auto' to detect
+DEFAULT_VAD        = os.getenv("USE_VAD", "0") not in ("0", "false", "False")
+
+SUPPORTED_EXTS = {
+    ".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".wma",
+    ".mp4", ".mkv", ".mov", ".avi", ".webm"
 }
-""")
-    return txt
 
-def robust_scroll_collect(container_el, page, max_scrolls: int, scroll_pause_ms: int, stabilize_rounds: int):
-    # make scrolling deterministic
-    try: container_el.evaluate("(el)=>{ el.style.scrollBehavior='auto'; }")
-    except Exception: pass
+# ---- Device selection for HF fallback ----
+if torch.cuda.is_available():
+    _HF_DEVICE = 0
+    _MODEL_KW = {}
+    _device_label = "cuda:0"
+elif getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+    _HF_DEVICE = torch.device("mps")
+    _MODEL_KW = {"torch_dtype": torch.float16}
+    _device_label = "mps"
+else:
+    _HF_DEVICE = -1
+    _MODEL_KW = {}
+    _device_label = "cpu"
+log.info(f"[HF fallback] device: {_device_label}")
 
-    all_lines, seen = [], set()
-    last_top, stable_rounds = -1, 0
-    last_good_top = 0
+# ---- ffprobe helpers ----
+def _run(cmd: list[str]) -> tuple[int, str, str]:
+    p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    return p.returncode, p.stdout.decode(errors="ignore"), p.stderr.decode(errors="ignore")
 
-    for _ in range(max_scrolls):
-        # 1) capture current view
-        chunk = collect_visible_text(container_el)
-        for line in chunk:
-            if line not in seen:
-                seen.add(line); all_lines.append(line)
-
-        # 2) scroll down
-        try:
-            container_el.evaluate("(el)=>{ el.scrollTop = el.scrollTop + Math.floor(el.clientHeight*0.9); }")
-        except Exception:
-            pass
-        page.wait_for_timeout(scroll_pause_ms)
-
-        # 3) read positions
-        try:
-            top   = container_el.evaluate("(el)=>el.scrollTop")
-            height= container_el.evaluate("(el)=>el.scrollHeight")
-            client= container_el.evaluate("(el)=>el.clientHeight")
-        except Exception:
-            top, height, client = 0, 0, 0
-
-        # anti-reset
-        if last_top >= 0 and top + 25 < last_top:
-            try:
-                container_el.evaluate("(el, t)=>{ el.scrollTop = t; }", last_good_top)
-            except Exception:
-                pass
-            page.wait_for_timeout(int(scroll_pause_ms * 1.2))
-            try:
-                top = container_el.evaluate("(el)=>el.scrollTop")
-            except Exception:
-                pass
-
-        if top <= last_top + 2:
-            stable_rounds += 1
-        else:
-            stable_rounds = 0
-            last_good_top = top
-        last_top = top
-
-        at_bottom = height and (height - top - client) < 2
-        if at_bottom and stable_rounds >= stabilize_rounds:
-            break
-
-    return all_lines
-
-def sniff_transcript_payloads(page, seconds=6) -> List[str]:
-    lines = []
-    def on_response(resp):
-        try:
-            url = resp.url.lower()
-            ct  = (resp.headers.get("content-type") or "").lower()
-            if "substrate.office.com" in url and ("init?" in url or "warmup" in url or "recommendations" in url):
-                return
-            if url.endswith(".vtt") or "text/vtt" in ct or ("text/plain" in ct and url.endswith(".vtt")):
-                b = resp.body()
-                for raw in b.decode("utf-8", errors="ignore").splitlines():
-                    s = raw.strip()
-                    if not s or s.startswith(("WEBVTT","NOTE","STYLE","Region:","Kind:")): continue
-                    if re.match(r"^\d{2}:\d{2}:\d{2}\.\d{3}\s*-->", s): continue
-                    lines.append(s)
-            elif url.endswith(".srt") or "application/x-subrip" in ct or "subrip" in ct:
-                b = resp.body()
-                for raw in b.decode("utf-8", errors="ignore").splitlines():
-                    s = raw.strip()
-                    if not s or s.isdigit() or re.match(r"^\d{2}:\d{2}:\d{2},\d{3}\s*-->", s): continue
-                    lines.append(s)
-            elif ("transcript" in url or "caption" in url or "subtitles" in url) and "json" in ct:
-                b = resp.body()
-                try:
-                    data = json.loads(b.decode("utf-8", errors="ignore"))
-                except Exception:
-                    return
-                if isinstance(data, dict):
-                    if "CombinedRecognizedPhrases" in data:
-                        for p in data["CombinedRecognizedPhrases"]:
-                            t = p.get("Display") or p.get("Text")
-                            if t: lines.append(t)
-                    for key in ("segments","lines","items","captions"):
-                        if key in data and isinstance(data[key], list):
-                            for s in data[key]:
-                                if isinstance(s, dict):
-                                    t = s.get("text") or s.get("caption") or s.get("display") or s.get("content")
-                                    if t: lines.append(t)
-                elif isinstance(data, list):
-                    for s in data:
-                        if isinstance(s, dict):
-                            t = s.get("text") or s.get("caption") or s.get("display")
-                            if t: lines.append(t)
-                        elif isinstance(s, str):
-                            lines.append(s)
-        except Exception:
-            pass
-
-    page.on("response", on_response)
-    t0 = time.time()
-    while (time.time() - t0) < seconds:
-        page.wait_for_timeout(150)
-
-    out, seen = [], set()
-    for s in lines:
-        if s not in seen:
-            seen.add(s); out.append(s)
-    return out
-
-def wait_for_transcript_container(page, seconds: int, poll_ms: int = 1500):
-    """
-    Keep the interactive browser open while the user completes first-time login.
-    Returns the transcript container once it appears, or None after timeout.
-    """
-    if seconds <= 0:
+def _ffprobe_json(path: str):
+    if not shutil.which("ffprobe"):
+        return None
+    rc, out, _ = _run(["ffprobe","-v","error","-print_format","json","-show_format","-show_streams", path])
+    if rc != 0:
+        return None
+    try:
+        return json.loads(out)
+    except Exception:
         return None
 
-    deadline = time.time() + seconds
-    while time.time() < deadline:
-        try:
-            container_el = find_transcript_container(page)
-            if container_el:
-                return container_el
-        except Exception:
-            pass
-        page.wait_for_timeout(poll_ms)
+def probe_summary(path: str) -> str:
+    meta = _ffprobe_json(path)
+    if not meta:
+        return "ffprobe: unavailable"
+    fmt = meta.get("format", {})
+    dur = fmt.get("duration")
+    size = fmt.get("size")
+    streams = meta.get("streams", [])
+    aud = [s for s in streams if s.get("codec_type") == "audio"]
+    a = aud[0] if aud else {}
+    return f"duration={dur}, size_bytes={size}, audio_codec={a.get('codec_name')}, ch={a.get('channels')}, sr={a.get('sample_rate')}"
+
+def _source_has_audio(path: str) -> bool:
+    meta = _ffprobe_json(path)
+    if not meta:
+        return True
+    return any(s.get("codec_type") == "audio" for s in meta.get("streams", []))
+
+# ---- Model resolution helpers ----
+def _truthy_env(name: str) -> bool:
+    return os.getenv(name, "0") not in ("", "0", "false", "False", "no", "No")
+
+def _candidate_model_dirs(model_size: str, backend: str) -> list[Path]:
+    """Return local model folders to try before allowing Hugging Face download."""
+    env_names = []
+    if backend == "faster":
+        env_names = ["FASTER_WHISPER_MODEL_PATH", "WHISPER_MODEL_PATH", "ASR_MODEL_PATH"]
+    else:
+        env_names = ["HF_WHISPER_MODEL_PATH", "WHISPER_MODEL_PATH", "ASR_MODEL_PATH"]
+
+    candidates: list[Path] = []
+    for name in env_names:
+        val = os.getenv(name)
+        if val:
+            candidates.append(Path(val).expanduser())
+
+    # Project-local defaults. These let the Windows runner work without any
+    # user-specific environment variables once the model is copied into ./models.
+    here = Path(__file__).resolve()
+    backend_dir = here.parent
+    project_root = backend_dir.parent
+    if backend == "faster":
+        folder = f"faster-whisper-{model_size}"
+    else:
+        folder = f"whisper-{model_size}"
+    candidates.extend([
+        project_root / "models" / folder,
+        backend_dir / "models" / folder,
+        Path.home() / ".cache" / "meeting-notes-echo" / "models" / folder,
+    ])
+    return candidates
+
+def _find_local_model_dir(model_size: str, backend: str) -> Optional[Path]:
+    for candidate in _candidate_model_dirs(model_size, backend):
+        if candidate.exists() and candidate.is_dir():
+            return candidate
     return None
 
-def capture_transcript(
-    url: str,
-    out_dir: str | Path = "./out_transcript",
-    sniff_seconds: int = 6,
-    enforce_pause_ms: int = 800,
-    max_scrolls: int = 320,
-    scroll_pause_ms: int = 900,
-    stabilize_rounds: int = 3,
-    profile_dir: str | None = None,
-    close_browser_after_capture: bool = True,
-    login_wait_seconds: int = 300,
-) -> Tuple[str, List[str], List[str]]:
-    """
-    Opens Teams/Stream viewer URL (no UI clicks), passively sniffs captions and
-    scroll-collects the transcript list. Returns (full_text, sniff_lines, dom_lines).
-    """
-    out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    prof = os.path.expanduser(profile_dir or DEFAULT_PROFILE)
-    Path(prof).mkdir(parents=True, exist_ok=True)
+def _offline_model_error(model_size: str, backend: str) -> RuntimeError:
+    tried = "\n  - ".join(str(p) for p in _candidate_model_dirs(model_size, backend))
+    if backend == "faster":
+        repo = f"Systran/faster-whisper-{model_size}"
+        env = "FASTER_WHISPER_MODEL_PATH"
+    else:
+        repo = f"openai/whisper-{model_size}"
+        env = "HF_WHISPER_MODEL_PATH"
+    return RuntimeError(
+        "ASR model is not available locally and online downloads are disabled or blocked.\n"
+        f"Expected backend: {backend}\n"
+        f"Expected model: {repo}\n"
+        "Download this model on a network that can access Hugging Face, copy the full "
+        "model folder to this machine, then either:\n"
+        f"  1) set ${env} to that folder, or\n"
+        f"  2) place it in one of these locations:\n  - {tried}"
+    )
 
-    with sync_playwright() as p:
-        ctx = p.chromium.launch_persistent_context(
-            user_data_dir=prof,
-            headless=False,
-            channel="chrome",  # use system Chrome (AAD/SSO stack)
-            accept_downloads=True,
-            args=["--autoplay-policy=no-user-gesture-required"],
+def _resolve_model_ref(model_size: str, backend: str) -> str:
+    """Use a local model folder when present; otherwise return the remote id/alias."""
+    local_dir = _find_local_model_dir(model_size, backend)
+    if local_dir:
+        log.info("[%s] using local model folder: %s", backend, local_dir)
+        return str(local_dir)
+
+    if _truthy_env("HF_HUB_OFFLINE") or _truthy_env("TRANSFORMERS_OFFLINE") or _truthy_env("ECHO_ASR_OFFLINE"):
+        raise _offline_model_error(model_size, backend)
+
+    if backend == "faster":
+        log.info("[faster-whisper] local model not found; allowing Hugging Face download for model=%s", model_size)
+        return model_size
+
+    model_id = f"openai/whisper-{model_size}"
+    log.info("[HF] local model not found; allowing Hugging Face download for %s", model_id)
+    return model_id
+
+# ---- ASR backends (parameterized) ----
+class _FasterWhisperASR:
+    def __init__(self, model_size: str, vad: bool):
+        self.model_size = model_size
+        self.vad = vad
+        device = "cpu"
+        compute_type = "int8"
+        if torch.cuda.is_available():
+            device = "cuda"; compute_type = "float16"
+        elif getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+            device = "cpu"; compute_type = "int8"  # faster-whisper has no MPS
+        log.info(f"[faster-whisper] model={model_size}, device={device}, compute_type={compute_type}, VAD={'on' if vad else 'off'}")
+        model_ref = _resolve_model_ref(model_size, "faster")
+        self.model = WhisperModel(model_ref, device=device, compute_type=compute_type)
+
+    def transcribe(self, media_path: str, language: Optional[str]) -> str:
+        if not _source_has_audio(media_path):
+            raise RuntimeError(f"No audio stream. Probe: {probe_summary(media_path)}")
+        segments, _info = self.model.transcribe(
+            media_path,
+            language=None if (not language or language.lower()=="auto") else language,
+            beam_size=1,
+            vad_filter=self.vad,
+            vad_parameters={"min_silence_duration_ms": 500} if self.vad else None,
+            condition_on_previous_text=False,
+            without_timestamps=True,
         )
-        page = ctx.new_page()
-        page.goto(url, wait_until="domcontentloaded", timeout=180000)
+        text = " ".join((getattr(seg, "text", "") or "").strip() for seg in segments)
+        if not text.strip():
+            # This is a valid outcome for silent recordings or files where VAD
+            # removes all audio. Return an empty transcript so the job layer can
+            # mark it as EMPTY_TRANSCRIPT instead of crashing as an unhandled ASR error.
+            log.warning("[faster-whisper] no speech text detected. Probe: %s", probe_summary(media_path))
+            return ""
+        return text
 
-        start_aggressive_pause(page, enforce_pause_ms)
+class _HFWhisperASR:
+    def __init__(self, model_size: str):
+        if not _has_transformers:
+            raise RuntimeError("transformers not installed.")
+        model_ref = _resolve_model_ref(model_size, "hf")
+        log.info(f"[HF] loading {model_ref}")
+        self.pipe = hf_pipeline(
+            "automatic-speech-recognition",
+            model=model_ref,
+            device=_HF_DEVICE,
+            model_kwargs=_MODEL_KW,
+        )
 
-        sniff_lines = sniff_transcript_payloads(page, sniff_seconds)
+    def transcribe(self, media_path: str, language: Optional[str]) -> str:
+        if not _source_has_audio(media_path):
+            raise RuntimeError(f"No audio stream. Probe: {probe_summary(media_path)}")
+        base_gk = {"task":"transcribe","do_sample":False,"num_beams":1,"temperature":0.0}
+        if language and language.lower() != "auto":
+            base_gk["language"] = language
+        out = self.pipe(media_path, chunk_length_s=30, stride_length_s=5, return_timestamps=False,
+                        generate_kwargs=base_gk)
+        text = out["text"] if isinstance(out, dict) else str(out)
+        if not text.strip():
+            log.warning("[HF Whisper] no speech text detected. Probe: %s", probe_summary(media_path))
+            return ""
+        return text
 
-        container_el = find_transcript_container(page)
-        if not container_el:
-            container_el = wait_for_transcript_container(page, login_wait_seconds)
-            if container_el:
-                start_aggressive_pause(page, enforce_pause_ms)
-                sniff_lines.extend(sniff_transcript_payloads(page, sniff_seconds))
-            else:
-                stop_aggressive_pause(page)
-                if close_browser_after_capture:
-                    ctx.close()
-                # Return empty to let caller decide UI message
-                return ("", sniff_lines, [])
+# ---- Cache ASR instances by backend+settings ----
+_ASR_CACHE: Dict[Tuple[str, str, bool], object] = {}
 
-        dom_lines = robust_scroll_collect(container_el, page, max_scrolls, scroll_pause_ms, stabilize_rounds)
+def _get_asr(use_faster: bool, model_size: str, vad: bool):
+    key = ("faster" if (use_faster and _has_faster) else "hf", model_size, bool(vad))
+    if key in _ASR_CACHE:
+        return _ASR_CACHE[key]
+    if use_faster and _has_faster:
+        asr = _FasterWhisperASR(model_size=model_size, vad=vad)
+    else:
+        asr = _HFWhisperASR(model_size=model_size)
+    _ASR_CACHE[key] = asr
+    return asr
 
-        stop_aggressive_pause(page)
+def transcribe_one(
+    media_path: str,
+    *,
+    model_size: Optional[str] = None,
+    language: Optional[str] = None,
+    vad: Optional[bool] = None,
+    use_faster: Optional[bool] = None,
+) -> str:
+    """
+    Transcribe a single file with requested settings.
+    - model_size: tiny|base|small|medium|large-v3
+    - language : e.g., 'en', or 'auto'
+    - vad      : True/False
+    - use_faster: True=prefer faster-whisper, False=force HF, None=env default
+    """
+    ms = (model_size or DEFAULT_MODEL_SIZE).strip()
+    lang = (language or DEFAULT_LANGUAGE).strip()
+    vd = DEFAULT_VAD if vad is None else bool(vad)
+    uf = USE_FASTER if use_faster is None else bool(use_faster)
+    asr = _get_asr(use_faster=uf, model_size=ms, vad=vd)
+    return asr.transcribe(media_path, lang)
 
-        # Merge & dedupe
-        combined, seen = [], set()
-        for s in (sniff_lines + dom_lines):
-            s = (s or "").strip()
-            if s and s not in seen:
-                seen.add(s); combined.append(s)
-
-        # Save (like your original)
-        (out_dir / "transcript_full.txt").write_text("\n".join(combined), encoding="utf-8")
-        (out_dir / "transcript_sniff.txt").write_text("\n".join(sniff_lines), encoding="utf-8")
-        (out_dir / "transcript_dom.txt").write_text("\n".join(dom_lines), encoding="utf-8")
-
-        if close_browser_after_capture:
-            ctx.close()
-
-        return ("\n".join(combined), sniff_lines, dom_lines)
+__all__ = ["SUPPORTED_EXTS", "probe_summary", "transcribe_one"]

@@ -377,7 +377,11 @@ def process_upload_job(job: dict, source_payload: dict) -> None:
         use_faster=False if asr.get("force_hf", False) else None,
     )
     if not transcript.strip():
-        fail_job(job["id"], "EMPTY_TRANSCRIPT", "The recording was transcribed, but no speech text was found.")
+        fail_job(
+            job["id"],
+            "EMPTY_TRANSCRIPT",
+            "No speech was detected in the uploaded recording. If this file should contain speech, check that it has an audio track, is not muted, and try again with VAD disabled.",
+        )
         return
 
     update_job(
