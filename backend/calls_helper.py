@@ -24,6 +24,20 @@ logging.basicConfig(level=getattr(logging, LOG_LEVEL, logging.INFO),
                     format="%(asctime)s | %(levelname)s | %(message)s")
 log = logging.getLogger("calls-helper")
 
+# ---- Corporate TLS support ----
+# In many corporate networks, HTTPS traffic is re-signed by a company root CA.
+# Python packages such as httpx/huggingface_hub may not trust the Windows
+# certificate store by default. If the optional `truststore` package is
+# installed, this lets Python use the OS trust store before any model download
+# is attempted. Set ECHO_USE_TRUSTSTORE=0 to disable.
+if os.getenv("ECHO_USE_TRUSTSTORE", "1") not in ("0", "false", "False"):
+    try:
+        import truststore  # type: ignore
+        truststore.inject_into_ssl()
+        log.info("[TLS] truststore enabled; Python will use the OS certificate store")
+    except Exception as exc:
+        log.debug("[TLS] truststore not enabled: %s", exc)
+
 # ---- Defaults (used if caller doesn't pass params) ----
 USE_FASTER = os.getenv("USE_FASTER_WHISPER", "1") not in ("0", "false", "False")
 DEFAULT_MODEL_SIZE = os.getenv("WHISPER_MODEL_SIZE", "small")  # tiny|base|small|medium|large-v3
@@ -84,6 +98,82 @@ def _source_has_audio(path: str) -> bool:
         return True
     return any(s.get("codec_type") == "audio" for s in meta.get("streams", []))
 
+# ---- Model resolution helpers ----
+def _truthy_env(name: str) -> bool:
+    return os.getenv(name, "0") not in ("", "0", "false", "False", "no", "No")
+
+def _candidate_model_dirs(model_size: str, backend: str) -> list[Path]:
+    """Return local model folders to try before allowing Hugging Face download."""
+    env_names = []
+    if backend == "faster":
+        env_names = ["FASTER_WHISPER_MODEL_PATH", "WHISPER_MODEL_PATH", "ASR_MODEL_PATH"]
+    else:
+        env_names = ["HF_WHISPER_MODEL_PATH", "WHISPER_MODEL_PATH", "ASR_MODEL_PATH"]
+
+    candidates: list[Path] = []
+    for name in env_names:
+        val = os.getenv(name)
+        if val:
+            candidates.append(Path(val).expanduser())
+
+    # Project-local defaults. These let the Windows runner work without any
+    # user-specific environment variables once the model is copied into ./models.
+    here = Path(__file__).resolve()
+    backend_dir = here.parent
+    project_root = backend_dir.parent
+    if backend == "faster":
+        folder = f"faster-whisper-{model_size}"
+    else:
+        folder = f"whisper-{model_size}"
+    candidates.extend([
+        project_root / "models" / folder,
+        backend_dir / "models" / folder,
+        Path.home() / ".cache" / "meeting-notes-echo" / "models" / folder,
+    ])
+    return candidates
+
+def _find_local_model_dir(model_size: str, backend: str) -> Optional[Path]:
+    for candidate in _candidate_model_dirs(model_size, backend):
+        if candidate.exists() and candidate.is_dir():
+            return candidate
+    return None
+
+def _offline_model_error(model_size: str, backend: str) -> RuntimeError:
+    tried = "\n  - ".join(str(p) for p in _candidate_model_dirs(model_size, backend))
+    if backend == "faster":
+        repo = f"Systran/faster-whisper-{model_size}"
+        env = "FASTER_WHISPER_MODEL_PATH"
+    else:
+        repo = f"openai/whisper-{model_size}"
+        env = "HF_WHISPER_MODEL_PATH"
+    return RuntimeError(
+        "ASR model is not available locally and online downloads are disabled or blocked.\n"
+        f"Expected backend: {backend}\n"
+        f"Expected model: {repo}\n"
+        "Download this model on a network that can access Hugging Face, copy the full "
+        "model folder to this machine, then either:\n"
+        f"  1) set ${env} to that folder, or\n"
+        f"  2) place it in one of these locations:\n  - {tried}"
+    )
+
+def _resolve_model_ref(model_size: str, backend: str) -> str:
+    """Use a local model folder when present; otherwise return the remote id/alias."""
+    local_dir = _find_local_model_dir(model_size, backend)
+    if local_dir:
+        log.info("[%s] using local model folder: %s", backend, local_dir)
+        return str(local_dir)
+
+    if _truthy_env("HF_HUB_OFFLINE") or _truthy_env("TRANSFORMERS_OFFLINE") or _truthy_env("ECHO_ASR_OFFLINE"):
+        raise _offline_model_error(model_size, backend)
+
+    if backend == "faster":
+        log.info("[faster-whisper] local model not found; allowing Hugging Face download for model=%s", model_size)
+        return model_size
+
+    model_id = f"openai/whisper-{model_size}"
+    log.info("[HF] local model not found; allowing Hugging Face download for %s", model_id)
+    return model_id
+
 # ---- ASR backends (parameterized) ----
 class _FasterWhisperASR:
     def __init__(self, model_size: str, vad: bool):
@@ -96,7 +186,8 @@ class _FasterWhisperASR:
         elif getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
             device = "cpu"; compute_type = "int8"  # faster-whisper has no MPS
         log.info(f"[faster-whisper] model={model_size}, device={device}, compute_type={compute_type}, VAD={'on' if vad else 'off'}")
-        self.model = WhisperModel(model_size, device=device, compute_type=compute_type)
+        model_ref = _resolve_model_ref(model_size, "faster")
+        self.model = WhisperModel(model_ref, device=device, compute_type=compute_type)
 
     def transcribe(self, media_path: str, language: Optional[str]) -> str:
         if not _source_has_audio(media_path):
@@ -112,18 +203,22 @@ class _FasterWhisperASR:
         )
         text = " ".join((getattr(seg, "text", "") or "").strip() for seg in segments)
         if not text.strip():
-            raise RuntimeError("Empty transcript (faster-whisper).")
+            # This is a valid outcome for silent recordings or files where VAD
+            # removes all audio. Return an empty transcript so the job layer can
+            # mark it as EMPTY_TRANSCRIPT instead of crashing as an unhandled ASR error.
+            log.warning("[faster-whisper] no speech text detected. Probe: %s", probe_summary(media_path))
+            return ""
         return text
 
 class _HFWhisperASR:
     def __init__(self, model_size: str):
         if not _has_transformers:
             raise RuntimeError("transformers not installed.")
-        model_id = f"openai/whisper-{model_size}"
-        log.info(f"[HF] loading {model_id}")
+        model_ref = _resolve_model_ref(model_size, "hf")
+        log.info(f"[HF] loading {model_ref}")
         self.pipe = hf_pipeline(
             "automatic-speech-recognition",
-            model=model_id,
+            model=model_ref,
             device=_HF_DEVICE,
             model_kwargs=_MODEL_KW,
         )
@@ -138,7 +233,8 @@ class _HFWhisperASR:
                         generate_kwargs=base_gk)
         text = out["text"] if isinstance(out, dict) else str(out)
         if not text.strip():
-            raise RuntimeError("Empty transcript (HF Whisper).")
+            log.warning("[HF Whisper] no speech text detected. Probe: %s", probe_summary(media_path))
+            return ""
         return text
 
 # ---- Cache ASR instances by backend+settings ----
