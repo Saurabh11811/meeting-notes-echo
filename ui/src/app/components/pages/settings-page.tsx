@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { PageHeader } from "../page-header";
-import { Server, Mic, Database, Activity, KeyRound, CheckCircle2, Save, RotateCcw, Info } from "lucide-react";
+import { Server, Mic, Database, Activity, CheckCircle2, Save, RotateCcw, Info, ExternalLink, Download } from "lucide-react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "../ui/tooltip";
-import { getSettings, updateSettings, getHealth, type EchoSettings } from "../../api/echo-api";
+import { getSettings, updateSettings, getHealth, testBackendConnection, pullOllamaModel, type EchoSettings } from "../../api/echo-api";
 
 const sections = [
   { id: "health", label: "System Health", icon: Activity },
@@ -142,9 +142,21 @@ function Select({ value, options, onChange }: { value: string; options: string[]
   );
 }
 
+function openExternalUrl(url?: string) {
+  if (!url) return;
+  const desktop = (window as any).echoDesktop;
+  if (desktop?.openExternal) {
+    desktop.openExternal(url);
+    return;
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
 function HealthPanel({ settings }: { settings: EchoSettings | null }) {
   const [health, setHealth] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [pullingModel, setPullingModel] = useState(false);
+  const [modelStatus, setModelStatus] = useState("");
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
 
   const refresh = async () => {
@@ -164,11 +176,26 @@ function HealthPanel({ settings }: { settings: EchoSettings | null }) {
     refresh();
   }, []);
 
+  const pullModel = async () => {
+    const model = health?.dependencies?.ollama?.model_name || settings?.backends?.local?.model || "llama3:latest";
+    setPullingModel(true);
+    setModelStatus(`Pulling ${model}...`);
+    try {
+      const result = await pullOllamaModel(model);
+      setModelStatus(result.message || (result.ok ? `${model} is ready.` : `Could not pull ${model}.`));
+      await refresh();
+    } catch (error) {
+      setModelStatus(error instanceof Error ? error.message : `Could not pull ${model}.`);
+    } finally {
+      setPullingModel(false);
+    }
+  };
+
   const checks = [
-    { 
-      l: "ffmpeg", 
-      v: health?.dependencies?.ffmpeg?.installed ? `v${health.dependencies.ffmpeg.path.split('/').pop() || '6.x'} · healthy` : "Not found", 
-      reason: "Audio transcoding", 
+    {
+      l: "ffmpeg",
+      v: health?.dependencies?.ffmpeg?.installed ? `${health.dependencies.ffmpeg.path || "available"} · healthy` : "Not found",
+      reason: "Audio transcoding",
       help: (
         <div className="space-y-1">
           <div className="font-medium mb-1">Required to process video and audio files.</div>
@@ -177,12 +204,32 @@ function HealthPanel({ settings }: { settings: EchoSettings | null }) {
           <div className="text-echo-text-faint">• <span className="text-white">Linux:</span> apt install ffmpeg</div>
         </div>
       ),
-      ok: health?.dependencies?.ffmpeg?.installed 
+      ok: health?.dependencies?.ffmpeg?.installed,
+      action: !health?.dependencies?.ffmpeg?.installed ? {
+        label: "Download ffmpeg",
+        url: health?.install_guidance?.ffmpeg?.download_url,
+      } : undefined,
     },
-    { 
-      l: "Playwright", 
-      v: health?.dependencies?.playwright?.installed ? `Python library · healthy` : "Not installed", 
-      reason: "Transcript capture", 
+    {
+      l: "ffprobe",
+      v: health?.dependencies?.ffprobe?.installed ? `${health.dependencies.ffprobe.path || "available"} · healthy` : "Not found",
+      reason: "Media inspection",
+      help: (
+        <div className="space-y-1">
+          <div className="font-medium mb-1">Usually installed with ffmpeg.</div>
+          <div className="text-echo-text-faint">{health?.install_guidance?.ffmpeg?.install || "Install ffmpeg for your operating system."}</div>
+        </div>
+      ),
+      ok: health?.dependencies?.ffprobe?.installed,
+      action: !health?.dependencies?.ffprobe?.installed ? {
+        label: "Download ffmpeg",
+        url: health?.install_guidance?.ffmpeg?.download_url,
+      } : undefined,
+    },
+    {
+      l: "Playwright",
+      v: health?.dependencies?.playwright?.installed ? `Python library · healthy` : "Not installed",
+      reason: "Transcript capture",
       help: (
         <div className="space-y-1">
           <div className="font-medium mb-1">Required for capturing transcripts from meeting links.</div>
@@ -190,12 +237,28 @@ function HealthPanel({ settings }: { settings: EchoSettings | null }) {
           <div className="text-echo-text-faint">• <span className="text-white">Verify:</span> pip install playwright</div>
         </div>
       ),
-      ok: health?.dependencies?.playwright?.installed 
+      ok: health?.dependencies?.playwright?.installed
     },
-    { 
-      l: "Python runtime", 
-      v: health?.python?.version ? `v${health.python.version} · healthy` : "v3.10+ required", 
-      reason: "Core engine", 
+    {
+      l: "Browser",
+      v: health?.dependencies?.browser?.installed ? `${health.dependencies.browser.name || "Browser"} · ${health.dependencies.browser.path}` : "Chrome, Edge, or Chromium not found",
+      reason: "Meeting link capture",
+      help: (
+        <div className="space-y-1">
+          <div className="font-medium mb-1">ECHO uses your installed browser so corporate SSO and certificates keep working.</div>
+          <div className="text-echo-text-faint">{health?.install_guidance?.browser?.install || "Install Chrome, Edge, or Chromium."}</div>
+        </div>
+      ),
+      ok: health?.dependencies?.browser?.installed,
+      action: !health?.dependencies?.browser?.installed ? {
+        label: "Download Chrome",
+        url: health?.install_guidance?.browser?.download_url,
+      } : undefined,
+    },
+    {
+      l: "Python runtime",
+      v: health?.python?.version ? `v${health.python.version} · healthy` : "v3.10+ required",
+      reason: "Core engine",
       help: (
         <div className="space-y-1">
           <div className="font-medium mb-1">The backbone of the ECHO backend.</div>
@@ -203,12 +266,12 @@ function HealthPanel({ settings }: { settings: EchoSettings | null }) {
           <div className="text-echo-text-faint">• <span className="text-white">Current:</span> {health?.python?.version || "Not detected"}</div>
         </div>
       ),
-      ok: health?.python?.ok 
+      ok: health?.python?.ok
     },
-    { 
-      l: "Ollama model", 
-      v: health?.dependencies?.ollama?.model_present ? `${health.dependencies.ollama.model_name} · ready` : health?.dependencies?.ollama?.installed ? `${health.dependencies.ollama.model_name} · model not found` : "Ollama not found", 
-      reason: "Local AI backend", 
+    {
+      l: "Ollama model",
+      v: health?.dependencies?.ollama?.model_present ? `${health.dependencies.ollama.model_name} · ready` : health?.dependencies?.ollama?.installed ? `${health.dependencies.ollama.model_name} · model not found` : "Ollama not found",
+      reason: "Local AI backend",
       help: (
         <div className="space-y-1">
           <div className="font-medium mb-1">Required for local summarization.</div>
@@ -216,12 +279,20 @@ function HealthPanel({ settings }: { settings: EchoSettings | null }) {
           <div className="text-echo-text-faint">• <span className="text-white">Run:</span> ollama pull {health?.dependencies?.ollama?.model_name || "llama3"}</div>
         </div>
       ),
-      ok: health?.dependencies?.ollama?.model_present 
+      ok: health?.dependencies?.ollama?.model_present,
+      action: !health?.dependencies?.ollama?.installed ? {
+        label: "Download Ollama",
+        url: health?.install_guidance?.ollama?.download_url,
+      } : !health?.dependencies?.ollama?.model_present ? {
+        label: pullingModel ? "Pulling..." : "Pull model",
+        onClick: pullModel,
+        disabled: pullingModel,
+      } : undefined,
     },
-    { 
-      l: "Output folder", 
-      v: health?.dependencies?.storage?.writable ? `${health.dependencies.storage.path} · writable` : "Not writable", 
-      reason: "File storage", 
+    {
+      l: "Output folder",
+      v: health?.dependencies?.storage?.writable ? `${health.dependencies.storage.path} · writable` : "Not writable",
+      reason: "File storage",
       help: (
         <div className="space-y-1">
           <div className="font-medium mb-1">Location where MoM and transcripts are saved.</div>
@@ -229,7 +300,7 @@ function HealthPanel({ settings }: { settings: EchoSettings | null }) {
           <div className="text-echo-text-faint">• Default is "out" folder in backend.</div>
         </div>
       ),
-      ok: health?.dependencies?.storage?.writable 
+      ok: health?.dependencies?.storage?.writable
     },
   ];
 
@@ -248,10 +319,10 @@ function HealthPanel({ settings }: { settings: EchoSettings | null }) {
 
       <div className="flex items-center justify-between mb-3">
         <div className="text-[14px] text-echo-text-muted">
-          Status: {loading ? "Checking..." : health ? "Operational" : "Unknown"} 
+          Status: {loading ? "Checking..." : health ? "Operational" : "Unknown"}
           {lastChecked && ` (last checked ${lastChecked.toLocaleTimeString()})`}
         </div>
-        <button 
+        <button
           onClick={refresh}
           disabled={loading}
           className="h-8 px-3 rounded-md border border-echo-border bg-echo-surface hover:bg-echo-surface-hover text-[14px] text-echo-text disabled:opacity-50"
@@ -279,7 +350,18 @@ function HealthPanel({ settings }: { settings: EchoSettings | null }) {
                 </Tooltip>
               </div>
               <div className="text-[14px] text-echo-text-muted mt-0.5">{c.v}</div>
+              {c.l === "Ollama model" && modelStatus && <div className="text-[13px] text-echo-text-muted mt-1">{modelStatus}</div>}
             </div>
+            {c.action && (
+              <button
+                onClick={() => c.action.onClick ? c.action.onClick() : openExternalUrl(c.action.url)}
+                disabled={c.action.disabled}
+                className="h-8 px-3 rounded-md border border-echo-border bg-echo-surface hover:bg-echo-surface-hover text-[13px] text-echo-text disabled:opacity-50 inline-flex items-center gap-1.5"
+              >
+                {c.action.url ? <ExternalLink size={13} /> : <Download size={13} />}
+                {c.action.label}
+              </button>
+            )}
           </li>
         ))}
       </ul>
@@ -287,43 +369,142 @@ function HealthPanel({ settings }: { settings: EchoSettings | null }) {
   );
 }
 
+const providerTabs = [
+  { id: "local", label: "Local AI", desc: "Ollama on this machine" },
+  { id: "dify", label: "Dify", desc: "Dify App API" },
+  { id: "azure", label: "Azure", desc: "Azure OpenAI" },
+];
+
 function BackendPanel({ settings, update }: { settings: EchoSettings | null; update: SettingsUpdate }) {
   const primary = settings?.summary?.default_backend || "local";
+  const [activeProvider, setActiveProvider] = useState(primary);
+  const [testing, setTesting] = useState("");
+  const [testResult, setTestResult] = useState<Record<string, { ok: boolean; message: string }>>({});
+  const cloudLocked = Boolean(settings?.privacy?.local_only_mode);
+  const activeConfig = settings?.backends?.[activeProvider] || {};
+
+  const runProviderTest = async (provider: string) => {
+    if (!settings) return;
+    setTesting(provider);
+    setTestResult((current) => ({ ...current, [provider]: { ok: false, message: "Testing connection..." } }));
+    try {
+      const result = await testBackendConnection(provider, settings);
+      setTestResult((current) => ({
+        ...current,
+        [provider]: { ok: result.ok, message: result.message || (result.ok ? "Connection OK." : "Connection failed.") },
+      }));
+    } catch (error) {
+      setTestResult((current) => ({
+        ...current,
+        [provider]: { ok: false, message: error instanceof Error ? error.message : "Connection test failed." },
+      }));
+    } finally {
+      setTesting("");
+    }
+  };
+
   return (
-    <Panel title="Backend Settings" desc="Switch between Dify, Azure OpenAI, and local Ollama.">
-      <Row label="Primary backend">
-        <div className="inline-flex p-1 bg-echo-surface-2 rounded-md border border-echo-border">
-          {[
-            ["dify", "Dify"],
-            ["azure", "Azure OpenAI"],
-            ["local", "Local Ollama"],
-          ].map(([id, label]) => (
-            <button key={id} onClick={() => update(["summary", "default_backend"], id)} className={`px-3 py-1.5 rounded text-[14px] ${primary === id ? "bg-echo-surface text-echo-text shadow-sm" : "text-echo-text-muted"}`}>{label}</button>
-          ))}
-        </div>
+    <Panel title="Backend Settings" desc="Choose one AI provider at a time. Local AI is the shipped default.">
+      <Row label="Local-only mode" hint="Blocks Dify and Azure until you opt into cloud providers.">
+        <Toggle on={cloudLocked} label={cloudLocked ? "Cloud providers blocked" : "Cloud providers allowed"} onChange={(value) => update(["privacy", "local_only_mode"], value)} />
       </Row>
-      <Row label="Dify enabled"><Toggle on={Boolean(settings?.backends?.dify?.enabled)} label="Available as a backend" onChange={(value) => update(["backends", "dify", "enabled"], value)} /></Row>
-      <Row label="Dify base URL"><Input value={settings?.backends?.dify?.base_url || ""} onChange={(value) => update(["backends", "dify", "base_url"], value)} /></Row>
-      <Row label="Dify API key" hint="Saved in local config for now; move to keychain before packaging.">
-        <Input value={settings?.backends?.dify?.api_key || ""} type="password" onChange={(value) => update(["backends", "dify", "api_key"], value)} />
-      </Row>
-      <Row label="Azure enabled"><Toggle on={Boolean(settings?.backends?.azure?.enabled)} label="Available as a backend" onChange={(value) => update(["backends", "azure", "enabled"], value)} /></Row>
-      <Row label="Azure OpenAI endpoint"><Input value={settings?.backends?.azure?.endpoint || ""} onChange={(value) => update(["backends", "azure", "endpoint"], value)} /></Row>
-      <Row label="Azure OpenAI API key" hint="Stored encrypted at rest.">
-        <div className="flex items-center gap-2">
-          <Input value={settings?.backends?.azure?.api_key || ""} type="password" onChange={(value) => update(["backends", "azure", "api_key"], value)} />
-          <button className="text-[14px] text-echo-accent inline-flex items-center gap-1"><KeyRound size={11} />Reveal</button>
-        </div>
-      </Row>
-      <Row label="Azure API version"><Input value={settings?.backends?.azure?.api_version || "2024-02-15-preview"} onChange={(value) => update(["backends", "azure", "api_version"], value)} /></Row>
-      <Row label="Deployment / model"><Input value={settings?.backends?.azure?.deployment || ""} onChange={(value) => update(["backends", "azure", "deployment"], value)} /></Row>
-      <Row label="Local Ollama enabled"><Toggle on={Boolean(settings?.backends?.local?.enabled)} label="Available as a backend" onChange={(value) => update(["backends", "local", "enabled"], value)} /></Row>
-      <Row label="Ollama base URL"><Input value={settings?.backends?.local?.base_url || ""} onChange={(value) => update(["backends", "local", "base_url"], value)} /></Row>
-      <Row label="Ollama model"><Input value={settings?.backends?.local?.model || "llama3:latest"} onChange={(value) => update(["backends", "local", "model"], value)} /></Row>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+        {providerTabs.map((provider) => {
+          const active = activeProvider === provider.id;
+          const isDefault = primary === provider.id;
+          const enabled = Boolean(settings?.backends?.[provider.id]?.enabled);
+          return (
+            <button
+              key={provider.id}
+              onClick={() => setActiveProvider(provider.id)}
+              className={`text-left rounded-md border px-3 py-2 transition-colors ${active ? "border-echo-accent bg-echo-accent-bg" : "border-echo-border bg-echo-surface-2 hover:bg-echo-surface-hover"}`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[14px] text-echo-text" style={{ fontWeight: 600 }}>{provider.label}</span>
+                <span className={`text-[12px] ${enabled ? "text-echo-success" : "text-echo-text-faint"}`}>{enabled ? "Enabled" : "Off"}</span>
+              </div>
+              <div className="text-[13px] text-echo-text-muted mt-1">{provider.desc}</div>
+              {isDefault && <div className="text-[12px] text-echo-accent mt-1">Default provider</div>}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="rounded-md border border-echo-border bg-echo-surface-2 p-4 space-y-4">
+        <Row label="Use as default">
+          <label className="inline-flex items-center gap-2 text-[14px] text-echo-text cursor-pointer">
+            <input
+              type="radio"
+              checked={primary === activeProvider}
+              onChange={() => update(["summary", "default_backend"], activeProvider)}
+              className="h-4 w-4 accent-[var(--echo-accent)]"
+            />
+            Use {providerTabs.find((provider) => provider.id === activeProvider)?.label || activeProvider} for new summaries
+          </label>
+        </Row>
+
+        <Row label="Provider enabled">
+          <Toggle
+            on={Boolean(activeConfig.enabled)}
+            label={activeConfig.enabled ? "Available in generation menus" : "Hidden from generation menus"}
+            onChange={(value) => update(["backends", activeProvider, "enabled"], value)}
+          />
+        </Row>
+
+        {activeProvider !== "local" && cloudLocked && (
+          <div className="rounded-md border border-echo-warning/30 bg-echo-warning/10 px-3 py-2 text-[14px] text-echo-text-muted">
+            Local-only mode is enabled. This provider can be configured, but it cannot be used or tested until cloud providers are allowed.
+          </div>
+        )}
+
+        {activeProvider === "local" && (
+          <>
+            <Row label="Ollama base URL"><Input value={settings?.backends?.local?.base_url || ""} onChange={(value) => update(["backends", "local", "base_url"], value)} /></Row>
+            <Row label="Ollama model" hint="Default local model used for private summaries."><Input value={settings?.backends?.local?.model || "llama3:latest"} onChange={(value) => update(["backends", "local", "model"], value)} /></Row>
+          </>
+        )}
+
+        {activeProvider === "dify" && (
+          <>
+            <Row label="Dify base URL"><Input value={settings?.backends?.dify?.base_url || ""} onChange={(value) => update(["backends", "dify", "base_url"], value)} /></Row>
+            <Row label="Dify API key" hint="Stored in local config until desktop secure storage is added.">
+              <Input value={settings?.backends?.dify?.api_key || ""} type="password" onChange={(value) => update(["backends", "dify", "api_key"], value)} />
+            </Row>
+          </>
+        )}
+
+        {activeProvider === "azure" && (
+          <>
+            <Row label="Azure endpoint"><Input value={settings?.backends?.azure?.endpoint || ""} onChange={(value) => update(["backends", "azure", "endpoint"], value)} /></Row>
+            <Row label="Azure API key" hint="Stored in local config until desktop secure storage is added.">
+              <Input value={settings?.backends?.azure?.api_key || ""} type="password" onChange={(value) => update(["backends", "azure", "api_key"], value)} />
+            </Row>
+            <Row label="Azure API version"><Input value={settings?.backends?.azure?.api_version || "2024-02-15-preview"} onChange={(value) => update(["backends", "azure", "api_version"], value)} /></Row>
+            <Row label="Deployment / model"><Input value={settings?.backends?.azure?.deployment || ""} onChange={(value) => update(["backends", "azure", "deployment"], value)} /></Row>
+          </>
+        )}
+
+        <Row label="Connection test">
+          <div className="space-y-2">
+            <button
+              onClick={() => runProviderTest(activeProvider)}
+              disabled={!settings || testing === activeProvider}
+              className="h-9 px-3 rounded-md border border-echo-border bg-echo-surface hover:bg-echo-surface-hover text-[14px] text-echo-text disabled:opacity-60"
+            >
+              {testing === activeProvider ? "Testing..." : "Test connection"}
+            </button>
+            {testResult[activeProvider] && (
+              <div className={`text-[14px] ${testResult[activeProvider].ok ? "text-echo-success" : "text-echo-danger"}`}>
+                {testResult[activeProvider].message}
+              </div>
+            )}
+          </div>
+        </Row>
+      </div>
     </Panel>
   );
 }
-
 function ASRPanel({ settings, update }: { settings: EchoSettings | null; update: SettingsUpdate }) {
   const backend = settings?.asr?.backend || "faster-whisper";
   const model = settings?.asr?.model_size || "small";
@@ -332,15 +513,15 @@ function ASRPanel({ settings, update }: { settings: EchoSettings | null; update:
 
   return (
     <Panel title="ASR Configuration" desc="Speech-to-text settings for recordings without transcripts.">
-      <Row 
-        label="ASR backend" 
+      <Row
+        label="ASR backend"
         hint={backend === "faster-whisper" ? "Optimized engine: 2-4x faster on CPUs." : "Standard engine: Max compatibility for Apple Silicon."}
       >
         <Select value={backend} options={["faster-whisper", "hf-whisper"]} onChange={(value) => update(["asr", "backend"], value)} />
       </Row>
 
-      <Row 
-        label="Whisper model" 
+      <Row
+        label="Whisper model"
         hint={model === "small" ? "Balanced: Professional accuracy and high speed." : model === "large-v3" ? "Maximum accuracy: Requires significant RAM/GPU." : "Efficiency: Fast performance with moderate accuracy."}
       >
         <Select value={model} options={["tiny", "base", "small", "medium", "large-v3"]} onChange={(value) => update(["asr", "model_size"], value)} />
@@ -350,15 +531,15 @@ function ASRPanel({ settings, update }: { settings: EchoSettings | null; update:
         <Input value={settings?.asr?.language || "en"} onChange={(value) => update(["asr", "language"], value)} />
       </Row>
 
-      <Row 
-        label="Voice activity detection (VAD)" 
+      <Row
+        label="Voice activity detection (VAD)"
         hint="Skips silences and prevents AI hallucinations (repeating text)."
       >
         <Toggle on={vad} label={vad ? "Enabled (Recommended)" : "Disabled"} onChange={(value) => update(["asr", "vad"], value)} />
       </Row>
 
-      <Row 
-        label="Chunk length" 
+      <Row
+        label="Chunk length"
         hint={isHF ? "Duration of audio segments (seconds)." : "Only required for standard hf-whisper engine."}
       >
         <input
@@ -370,8 +551,8 @@ function ASRPanel({ settings, update }: { settings: EchoSettings | null; update:
         />
       </Row>
 
-      <Row 
-        label="Stride length" 
+      <Row
+        label="Stride length"
         hint={isHF ? "Overlap between segments to prevent cut-off words." : "Only required for standard hf-whisper engine."}
       >
         <input

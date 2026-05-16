@@ -62,6 +62,70 @@ Recording (File OR Teams/Stream URL)
 
 The new product architecture runs a FastAPI backend and the generated React/Vite UI.
 
+First-time setup:
+
+```bash
+# macOS / Linux
+./install.sh
+
+# Windows PowerShell
+.\install.ps1
+```
+
+Run diagnostics at any time:
+
+```bash
+python scripts/doctor.py
+```
+
+Desktop shell development:
+
+```bash
+# Terminal 1: frontend dev server
+./run_frontend.sh
+
+# Terminal 2: Electron shell
+npm run desktop:dev
+```
+
+`desktop:dev` starts the FastAPI backend automatically unless one is already running at `http://127.0.0.1:8765/api/health`. Set `ECHO_SKIP_BACKEND_SIDECAR=1` if you want to manage the backend yourself.
+
+Build the Python backend sidecar for the current operating system:
+
+```bash
+python -m pip install -r requirements-packaging.txt
+npm run backend:build-sidecar
+```
+
+Create an unpacked desktop app for local packaging checks:
+
+```bash
+npm install
+npm run desktop:pack
+```
+
+Create native installer artifacts for the current operating system:
+
+```bash
+npm run desktop:dist
+```
+
+Platform-specific builds:
+
+```bash
+npm run desktop:dist:mac     # DMG + zip on macOS
+npm run desktop:dist:win     # NSIS .exe + .msi + portable exe on Windows
+npm run desktop:dist:linux   # AppImage + .deb on Linux
+```
+
+Native installers should be built on the target OS. The GitHub Actions workflow at `.github/workflows/desktop-release.yml` builds macOS, Windows, and Linux artifacts on native runners and uploads them as workflow artifacts. Use `workflow_dispatch` to run it manually; set `package_asr=true` only when you want to experiment with a much larger build that bundles local recording transcription libraries.
+
+The Electron shell loads the React UI in a native desktop window and starts the FastAPI backend as a sidecar. In development it launches `python -m echo_api`; in packaged builds it looks for a PyInstaller-built `echo-api` binary under bundled resources.
+
+Packaged local builds use ad-hoc macOS signing by default (`identity: "-"`) so developers can test a DMG without an Apple Developer certificate. Consumer macOS releases should use Developer ID signing and notarization. Set `ECHO_MAC_SIGN=1` in a properly configured signing environment before running the macOS release build.
+
+By default, the sidecar is a lightweight backend package that supports settings, transcript-first flows, provider checks, and local Ollama summarization. It intentionally excludes `torch`, `faster-whisper`, and `transformers` to keep first installers smaller and more reliable. For local audio/video ASR inside the packaged app, build with `ECHO_PACKAGE_ASR=1` after validating size, startup time, and platform-specific native library behavior.
+
 ```bash
 # Backend only
 ./run_backend.sh
@@ -80,7 +144,7 @@ Default URLs:
 - Health check: `http://127.0.0.1:8765/api/health`
 - Frontend: `http://127.0.0.1:5173`
 
-The backend script uses your current Python environment and does not create a virtual environment. If dependencies are missing, install them yourself with `python -m pip install -r backend/requirements.txt`. Frontend dependencies are installed by `run_frontend.sh` if `ui/node_modules` is missing. Backend development data is stored under `backend/.data/`.
+The backend script uses your current Python environment and does not create a virtual environment. If dependencies are missing, install the product runtime dependencies with `python -m pip install -r requirements.txt`. The `backend/requirements.txt` file intentionally delegates to the repo-root runtime file so ASR, browser capture, and provider modules stay in one dependency set. Frontend dependencies are installed by `run_frontend.sh` if `ui/node_modules` is missing. Backend development data is stored under `backend/.data/`.
 
 ### Product Backend Data
 
@@ -140,7 +204,7 @@ Then open the browser page it prints (usually `http://127.0.0.1:7860`).
 Created automatically on first run. Example:
 ```yaml
 summary:
-  backend: local              # local | azure | dify
+  default_backend: local      # local | dify | azure
   model: llama3:latest        # legacy; used by local if not set under backends.local
   max_chars: 0                # 0 = no trim
   prompt_file: ""             # optional path to a .txt prompt
@@ -148,15 +212,22 @@ summary:
 
 backends:
   local:
+    enabled: true
+    name: Local Ollama
+    base_url: http://localhost:11434
     model: llama3:latest
+  dify:
+    enabled: true
+    name: Dify
+    base_url: "https://api.dify.ai/v1"
+    api_key: "<your-dify-app-key>"
   azure:
+    enabled: false
+    name: Azure OpenAI
     endpoint: "https://<resource>.openai.azure.com"
     api_key: "<your-key>"
     api_version: "2024-02-15-preview"
     deployment: "gpt-4o"     # deployment name (not model id)
-  dify:
-    base_url: "https://api.dify.ai"
-    api_key: "<your-dify-app-key>"
 
 output:
   dir: "./out"
@@ -166,13 +237,16 @@ output:
   retention_days: 14
 
 asr:
+  backend: faster-whisper
   model_size: "small"         # tiny | base | small | medium | large-v3
   language: "en"              # 'auto' to detect
-  vad: false
+  vad: true
   force_hf: false             # check this to disable faster-whisper
   chunk_length_s: 30
   stride_length_s: 5
-  concurrency: 1
+
+privacy:
+  local_only_mode: true       # blocks Dify/Azure until the user opts into cloud providers
 ```
 
 **Prompt resolution order** (via `prompts.py`):
@@ -185,15 +259,18 @@ asr:
 ## 🔌 Backends
 
 ### Local (Ollama)
+- This is the shipped default backend.
 - Set model under `backends.local.model` (e.g., `llama3:latest`).
 - The UI checks if Ollama is installed and if model is present.
 - Great for **private** / **offline** summarization.
 
 ### Azure OpenAI
+- Disable `privacy.local_only_mode` before using Azure.
 - Provide **endpoint**, **api_key**, **api_version**, and **deployment** (name).
 - We call the **Chat Completions** API with your deployment.
 
 ### Dify (Native App API)
+- Disable `privacy.local_only_mode` before using Dify.
 - Provide **base_url** and **app API key** (not OpenAI-compatible key).
 - We send the transcript via `/v1/chat-messages` in blocking mode.
 - If your Dify app expects a “system prompt”, we **prepend** it to the user message.
@@ -217,19 +294,23 @@ asr:
 ---
 
 ## 🧪 Health Checks
-Click **Test All Connections** in the UI to verify:
-- Local (Ollama model)
-- Dify (native App API)
-- Azure OpenAI (deployment reachable)
+Open **Settings -> System Health** in the UI to verify:
+- Local Ollama, including the configured model.
+- ffmpeg and ffprobe for audio/video processing.
+- Chrome, Edge, or Chromium for meeting link transcript capture.
+- Dify and Azure from their provider tabs after local-only mode is disabled.
+
+If Ollama is missing, the app offers a **Download Ollama** action. If Ollama is installed but the configured model is missing, the app offers **Pull model** and runs `ollama pull <model>` for the user.
 
 ---
 
 ## 🛠️ Troubleshooting
 - **Playwright error / no Chromium**: run `python -m playwright install chromium`.
+- **Browser capture behind corporate proxy**: install Chrome or Edge and sign in normally. ECHO prefers a system browser instead of forcing a bundled Chromium download.
 - **No transcript from URL**: Ensure you’re **owner** or transcript is visible to you.
 - **ASR: “no audio stream”**: The file may not have an audio track. Check with `ffprobe`.
 - **Azure “deployment not found”**: The **deployment name** is required (not just model id).
-- **Ollama model missing**: Run `ollama pull llama3:latest` (or your model tag).
+- **Ollama model missing**: Use **Settings -> System Health -> Pull model**, or run `ollama pull llama3:latest` manually.
 
 ---
 

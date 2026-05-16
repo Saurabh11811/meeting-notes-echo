@@ -55,6 +55,19 @@ export type HomeSummary = {
 
 export type EchoSettings = Record<string, any>;
 
+export type BackendTestResponse = {
+  backend_kind: string;
+  ok: boolean;
+  message: string;
+};
+
+export type SetupStatus = {
+  ollama: { installed: boolean; path: string | null; model_name: string };
+  browser: { installed: boolean; name: string | null; path: string | null };
+  ffmpeg: { installed: boolean; path: string | null };
+  guidance: Record<string, { download_url: string; install: string }>;
+};
+
 export type MeetingSummary = {
   id: string;
   title: string;
@@ -306,6 +319,18 @@ export function getHealth() {
 
 export function updateSettings(values: EchoSettings) {
   return send<EchoSettings>("/settings", "PUT", { values });
+}
+
+export function testBackendConnection(backend_kind: string, values: EchoSettings) {
+  return send<BackendTestResponse>("/settings/test-backend", "POST", { backend_kind, values });
+}
+
+export function getSetupStatus() {
+  return request<SetupStatus>("/settings/setup");
+}
+
+export function pullOllamaModel(model?: string) {
+  return send<{ ok: boolean; message: string; model: string }>("/settings/ollama/pull-model", "POST", { model });
 }
 
 export function getTemplates() {

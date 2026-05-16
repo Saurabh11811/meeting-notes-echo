@@ -457,6 +457,8 @@ def summarize_and_complete(job: dict, transcript_id: str, transcript: str) -> No
 
 def summarize_transcript(transcript: str, config: dict) -> str:
     backend = config.get("summary", {}).get("default_backend", "local")
+    if config.get("privacy", {}).get("local_only_mode") and backend != "local":
+        return "[Configuration error] Local-only mode is enabled. Select the Local Ollama backend or disable local-only mode before using cloud providers."
     system_prompt = load_prompt(config)
     timeout = int(config.get("summary", {}).get("timeout_seconds", 240))
 

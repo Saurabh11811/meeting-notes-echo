@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 
-BACKEND_DIR = Path(__file__).resolve().parents[2]
+if getattr(sys, "frozen", False):
+    BACKEND_DIR = Path(getattr(sys, "_MEIPASS")) / "backend"
+else:
+    BACKEND_DIR = Path(__file__).resolve().parents[2]
 REPO_ROOT = BACKEND_DIR.parent
 DEFAULT_CONFIG_PATH = BACKEND_DIR / "config" / "default.yaml"
 
@@ -33,4 +37,3 @@ def storage_path(name: str) -> Path:
     path = app_data_dir() / name
     path.mkdir(parents=True, exist_ok=True)
     return path
-

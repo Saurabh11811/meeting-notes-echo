@@ -1,0 +1,24 @@
+{
+  "name": "meeting-notes-echo-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ECHO desktop packaging shell",
+  "author": "ECHO contributors",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "doctor": "python scripts/doctor.py",
+    "backend:build-sidecar": "python scripts/build_backend_sidecar.py",
+    "ui:install": "npm --prefix ui install",
+    "ui:build": "npm --prefix ui run build",
+    "desktop:dev": "electron electron/main.cjs",
+    "desktop:pack": "npm run ui:build && electron-builder --config electron-builder.config.cjs --dir",
+    "desktop:dist": "npm run backend:build-sidecar && npm run ui:build && electron-builder --config electron-builder.config.cjs",
+    "desktop:dist:mac": "npm run backend:build-sidecar && npm run ui:build && electron-builder --config electron-builder.config.cjs --mac",
+    "desktop:dist:win": "npm run backend:build-sidecar && npm run ui:build && electron-builder --config electron-builder.config.cjs --win",
+    "desktop:dist:linux": "npm run backend:build-sidecar && npm run ui:build && electron-builder --config electron-builder.config.cjs --linux"
+  },
+  "devDependencies": {
+    "electron": "^39.2.6",
+    "electron-builder": "^26.0.12"
+  }
+}

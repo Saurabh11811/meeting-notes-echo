@@ -4,6 +4,9 @@ config.yaml
 .DS_Store
 node_modules/
 logs/
+release/
+backend-dist/*
+!backend-dist/.gitkeep
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

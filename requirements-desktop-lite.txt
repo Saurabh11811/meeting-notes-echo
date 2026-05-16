@@ -1,0 +1,13 @@
+# Minimal dependencies for building the bundled desktop backend sidecar.
+# This intentionally excludes ASR stacks such as torch, faster-whisper, and
+# transformers. Set ECHO_PACKAGE_ASR=1 and install requirements.txt when building
+# a larger package that includes recording transcription support.
+fastapi>=0.115,<1.0
+ollama>=0.3.0
+playwright>=1.46,<2.0
+pydantic>=2.8,<3.0
+python-multipart>=0.0.9,<1.0
+PyYAML>=6.0.2
+requests>=2.32,<3.0
+truststore>=0.10,<1.0
+uvicorn[standard]>=0.34,<1.0

@@ -13,8 +13,20 @@ import re, time, json, os
 from typing import Tuple, List
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 
+try:
+    from echo_api.core.dependencies import find_browser
+except Exception:
+    find_browser = None
+
 # Defaults are adjustable via function parameters
 DEFAULT_PROFILE = str(Path.home() / ".pw-teams-profile")
+
+
+def browser_launch_options() -> dict:
+    browser = find_browser() if find_browser else None
+    if browser:
+        return {"executable_path": browser[1]}
+    return {"channel": os.getenv("ECHO_PLAYWRIGHT_CHANNEL", "chrome")}
 
 def start_aggressive_pause(page, enforce_pause_ms: int):
     if enforce_pause_ms <= 0:
@@ -274,12 +286,13 @@ def capture_transcript(
     Path(prof).mkdir(parents=True, exist_ok=True)
 
     with sync_playwright() as p:
+        launch_options = browser_launch_options()
         ctx = p.chromium.launch_persistent_context(
             user_data_dir=prof,
             headless=False,
-            channel="chrome",  # use system Chrome (AAD/SSO stack)
             accept_downloads=True,
             args=["--autoplay-policy=no-user-gesture-required"],
+            **launch_options,
         )
         page = ctx.new_page()
         page.goto(url, wait_until="domcontentloaded", timeout=180000)

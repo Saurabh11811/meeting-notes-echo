@@ -3,21 +3,16 @@ from __future__ import annotations
 import os, json, shutil, logging, subprocess
 from pathlib import Path
 from typing import Optional, Dict, Tuple
-import torch
-
-# Optional deps
-try:
-    import transformers  # noqa: F401
-    from transformers import pipeline as hf_pipeline
-    _has_transformers = True
-except Exception:
-    _has_transformers = False
 
 try:
-    from faster_whisper import WhisperModel
-    _has_faster = True
+    from echo_api.core.dependencies import find_binary
 except Exception:
-    _has_faster = False
+    find_binary = None
+
+hf_pipeline = None
+WhisperModel = None
+_has_transformers: bool | None = None
+_has_faster: bool | None = None
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(level=getattr(logging, LOG_LEVEL, logging.INFO),
@@ -49,20 +44,48 @@ SUPPORTED_EXTS = {
     ".mp4", ".mkv", ".mov", ".avi", ".webm"
 }
 
-# ---- Device selection for HF fallback ----
-if torch.cuda.is_available():
-    _HF_DEVICE = 0
-    _MODEL_KW = {}
-    _device_label = "cuda:0"
-elif getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
-    _HF_DEVICE = torch.device("mps")
-    _MODEL_KW = {"torch_dtype": torch.float16}
-    _device_label = "mps"
-else:
-    _HF_DEVICE = -1
-    _MODEL_KW = {}
-    _device_label = "cpu"
-log.info(f"[HF fallback] device: {_device_label}")
+def _torch():
+    import torch
+
+    return torch
+
+
+def _has_faster_whisper() -> bool:
+    global WhisperModel, _has_faster
+    if _has_faster is not None:
+        return _has_faster
+    try:
+        from faster_whisper import WhisperModel as imported_model
+
+        WhisperModel = imported_model
+        _has_faster = True
+    except Exception:
+        _has_faster = False
+    return _has_faster
+
+
+def _has_transformers_pipeline() -> bool:
+    global hf_pipeline, _has_transformers
+    if _has_transformers is not None:
+        return _has_transformers
+    try:
+        import transformers  # noqa: F401
+        from transformers import pipeline as imported_pipeline
+
+        hf_pipeline = imported_pipeline
+        _has_transformers = True
+    except Exception:
+        _has_transformers = False
+    return _has_transformers
+
+
+def _hf_device_and_kwargs():
+    torch = _torch()
+    if torch.cuda.is_available():
+        return 0, {}, "cuda:0"
+    if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+        return torch.device("mps"), {"torch_dtype": torch.float16}, "mps"
+    return -1, {}, "cpu"
 
 # ---- ffprobe helpers ----
 def _run(cmd: list[str]) -> tuple[int, str, str]:
@@ -70,9 +93,10 @@ def _run(cmd: list[str]) -> tuple[int, str, str]:
     return p.returncode, p.stdout.decode(errors="ignore"), p.stderr.decode(errors="ignore")
 
 def _ffprobe_json(path: str):
-    if not shutil.which("ffprobe"):
+    ffprobe = find_binary("ffprobe", env_var="ECHO_FFPROBE_PATH") if find_binary else shutil.which("ffprobe")
+    if not ffprobe:
         return None
-    rc, out, _ = _run(["ffprobe","-v","error","-print_format","json","-show_format","-show_streams", path])
+    rc, out, _ = _run([ffprobe, "-v", "error", "-print_format", "json", "-show_format", "-show_streams", path])
     if rc != 0:
         return None
     try:
@@ -179,6 +203,7 @@ class _FasterWhisperASR:
     def __init__(self, model_size: str, vad: bool):
         self.model_size = model_size
         self.vad = vad
+        torch = _torch()
         device = "cpu"
         compute_type = "int8"
         if torch.cuda.is_available():
@@ -212,15 +237,16 @@ class _FasterWhisperASR:
 
 class _HFWhisperASR:
     def __init__(self, model_size: str):
-        if not _has_transformers:
+        if not _has_transformers_pipeline():
             raise RuntimeError("transformers not installed.")
+        device, model_kw, device_label = _hf_device_and_kwargs()
         model_ref = _resolve_model_ref(model_size, "hf")
-        log.info(f"[HF] loading {model_ref}")
+        log.info(f"[HF] loading {model_ref} on {device_label}")
         self.pipe = hf_pipeline(
             "automatic-speech-recognition",
             model=model_ref,
-            device=_HF_DEVICE,
-            model_kwargs=_MODEL_KW,
+            device=device,
+            model_kwargs=model_kw,
         )
 
     def transcribe(self, media_path: str, language: Optional[str]) -> str:
@@ -241,10 +267,11 @@ class _HFWhisperASR:
 _ASR_CACHE: Dict[Tuple[str, str, bool], object] = {}
 
 def _get_asr(use_faster: bool, model_size: str, vad: bool):
-    key = ("faster" if (use_faster and _has_faster) else "hf", model_size, bool(vad))
+    faster_available = _has_faster_whisper() if use_faster else False
+    key = ("faster" if (use_faster and faster_available) else "hf", model_size, bool(vad))
     if key in _ASR_CACHE:
         return _ASR_CACHE[key]
-    if use_faster and _has_faster:
+    if use_faster and faster_available:
         asr = _FasterWhisperASR(model_size=model_size, vad=vad)
     else:
         asr = _HFWhisperASR(model_size=model_size)

@@ -11,13 +11,13 @@ app:
       - http://127.0.0.1:5173
 
 user:
-  full_name: Priya Sharma
-  email: priya.sharma@company.com
-  role: Chief of Staff
+  full_name: ""
+  email: ""
+  role: ""
 
 defaults:
   meeting_type: Executive
-  export_format: PDF · Board ready
+  export_format: PDF / Board ready
   confidentiality: Internal
 
 notifications:
@@ -57,7 +57,7 @@ queue:
   process_interval_seconds: 10
 
 summary:
-  default_backend: dify
+  default_backend: local
   timeout_seconds: 240
   max_chars: 0
   default_template: Executive MoM
@@ -93,7 +93,7 @@ asr:
   stride_length_s: 5
 
 privacy:
-  local_only_mode: false
+  local_only_mode: true
   redact_pii: true
   delete_transcript_after_mom: false
   audit_logging: true
