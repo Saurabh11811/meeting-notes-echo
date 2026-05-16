@@ -8,6 +8,18 @@ from echo_api.api.router import api_router
 from echo_api.core.config import load_app_config
 from echo_api.services.bootstrap import bootstrap_application
 
+from windows_asyncio_fix import apply_windows_asyncio_policy
+
+apply_windows_asyncio_policy()
+
+try:
+    import truststore
+    truststore.inject_into_ssl()
+    print("Injected Windows trust store into Python SSL")
+except ImportError:
+    print("truststore not installed; using Python default cert store")
+except Exception as e:
+    print(f"Could not inject Windows trust store: {e}")
 
 def create_app() -> FastAPI:
     config = load_app_config()
